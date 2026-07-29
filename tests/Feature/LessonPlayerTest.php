@@ -81,6 +81,22 @@ test('the view receives exactly the manifest the API returns', function () {
     $api = $this->getJson("/api/lessons/{$lesson->code}")->assertOk()->json();
     $embedded = $this->get("/lessons/{$lesson->code}")->assertOk()->viewData('manifest');
 
+    // grading_token is re-encrypted on every StudentManifest call, so the
+    // ciphertext differs; everything else must be identical, and both tokens
+    // must resolve to the same version.
+    expect($api)->toHaveKey('grading_token')
+        ->and($embedded)->toHaveKey('grading_token')
+        ->and($api['grading_token'])->toBeString()->not->toBe('')
+        ->and($embedded['grading_token'])->toBeString()->not->toBe('');
+
+    $tokenService = app(App\Services\GradingToken::class);
+    $versionId = $lesson->fresh()->currentVersion()->id;
+
+    expect($tokenService->resolve($api['grading_token'], $lesson->fresh())->id)->toBe($versionId)
+        ->and($tokenService->resolve($embedded['grading_token'], $lesson->fresh())->id)->toBe($versionId);
+
+    unset($api['grading_token'], $embedded['grading_token']);
+
     $this->assertSame($api, $embedded);
 });
 
@@ -167,21 +183,25 @@ test('every content block type renders through its own partial', function () {
 test('a block type with no renderer shows a neutral message and logs the details', function () {
     Log::spy();
 
-    $lesson = publishedLessonWithManifestBlocks([
-        ['block_id' => 'BLOCK-QUIZ', 'type' => 'quiz', 'config' => [
-            'questions' => [],
-            'shuffle_questions' => false,
-            'shuffle_options' => false,
-        ], 'grading' => null],
-    ]);
+    // Every registered type now has a partial, so this goes through the
+    // Block component directly with a type key that resolves to nothing.
+    $html = Illuminate\Support\Facades\Blade::render(
+        '<x-player.block :block="$block" />',
+        [
+            'block' => [
+                'block_id' => 'BLOCK-FUTURE',
+                'type' => 'future_block',
+                'config' => ['html' => '<p>Not yet renderable.</p>'],
+                'speech' => [],
+            ],
+        ]
+    );
 
-    $this->get("/lessons/{$lesson->code}")
-        ->assertOk()
-        ->assertSee('This content is currently unavailable');
+    expect($html)->toContain('This content is currently unavailable');
 
     Log::shouldHaveReceived('warning')->withArgs(
-        fn (string $message, array $context) => $context['block_id'] === 'BLOCK-QUIZ'
-            && $context['type'] === 'quiz'
+        fn (string $message, array $context) => $context['block_id'] === 'BLOCK-FUTURE'
+            && $context['type'] === 'future_block'
     );
 });
 

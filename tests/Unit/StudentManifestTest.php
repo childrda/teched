@@ -56,7 +56,9 @@ test('a published lesson is served with redacted configs and speech', function (
     $manifest = studentManifestFor($lesson);
 
     expect($manifest)->toBeArray()
-        ->and($manifest['code'])->toBe($lesson->code);
+        ->and($manifest['code'])->toBe($lesson->code)
+        ->and($manifest)->toHaveKey('grading_token')
+        ->and($manifest['grading_token'])->toBeString()->not->toBe('');
 
     $blocks = $manifest['pages'][0]['blocks'];
 

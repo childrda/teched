@@ -16,11 +16,16 @@ use App\Models\Lesson;
  *
  * Speech is registry-driven: the per-type wording lives in each block
  * type's speakableText(), never here, in a controller, or in a template.
+ *
+ * grading_token binds the player to this version for the grading endpoint
+ * without exposing the version's database id.
  */
 class StudentManifest
 {
-    public function __construct(private readonly BlockTypeRegistry $registry)
-    {
+    public function __construct(
+        private readonly BlockTypeRegistry $registry,
+        private readonly GradingToken $gradingToken,
+    ) {
     }
 
     /**
@@ -49,6 +54,8 @@ class StudentManifest
             fn (array $page) => $this->preparePage($page),
             $manifest['pages'] ?? []
         );
+
+        $manifest['grading_token'] = $this->gradingToken->issue($version);
 
         return $manifest;
     }

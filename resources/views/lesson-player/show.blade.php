@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $manifest['title'] }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
@@ -14,8 +15,13 @@
     </p>
 </noscript>
 
-{{-- The whole manifest is embedded once, escaped by @js. The player never fetches. --}}
-<div x-data="lessonPlayer(@js($manifest))" x-cloak class="flex min-h-full flex-col">
+{{-- The whole manifest is embedded once, escaped by @js. The player never fetches.
+     data-lesson-code lets nested block components build the grading URL
+     without changing the Block view component. --}}
+<div x-data="lessonPlayer(@js($manifest))"
+     data-lesson-code="{{ $manifest['code'] }}"
+     x-cloak
+     class="flex min-h-full flex-col">
 
     <header class="border-b-2 border-slate-400 bg-white">
         <div class="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
