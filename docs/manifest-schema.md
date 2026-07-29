@@ -118,6 +118,11 @@ gradable block. `rule` is one of `all_correct`, `min_score`,
 
 ### image
 
+`url` (and `image_url` on image_labeling) accepts an absolute http/https URL
+**or** a root-relative path beginning with `/` (uploaded assets are served
+from `/storage/...`). Protocol-relative (`//`) values and `javascript:`/
+`data:` schemes are rejected at validation.
+
 ```json
 {
   "url": "https://cdn.example.com/welding-mask.jpg",

@@ -3,6 +3,7 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Rules\AssetUrl;
 use Illuminate\Validation\Validator;
 
 /**
@@ -34,7 +35,7 @@ class ImageLabelingBlock extends AbstractBlockType
     public function configRules(): array
     {
         return [
-            'image_url' => ['required', 'string', 'url:http,https'],
+            'image_url' => ['required', 'string', new AssetUrl()],
             'image_alt' => ['required', 'string'],
             'long_description' => ['nullable', 'string'],
             'instructions' => ['nullable', 'string'],

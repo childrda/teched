@@ -43,6 +43,11 @@
     "nullableString": {
       "type": ["string", "null"]
     },
+    "assetUrl": {
+      "type": "string",
+      "description": "Absolute http/https URL or root-relative path (e.g. /storage/...). Never protocol-relative.",
+      "pattern": "^(https?://|/(?!/))"
+    },
     "page": {
       "type": "object",
       "required": [
@@ -181,7 +186,7 @@
       "required": ["url", "alt", "caption", "long_description"],
       "additionalProperties": false,
       "properties": {
-        "url": { "type": "string", "format": "uri" },
+        "url": { "$ref": "#/$defs/assetUrl" },
         "alt": { "type": "string" },
         "caption": { "$ref": "#/$defs/nullableString" },
         "long_description": { "$ref": "#/$defs/nullableString" }
@@ -310,7 +315,7 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "image_url": { "type": "string", "format": "uri" },
+        "image_url": { "$ref": "#/$defs/assetUrl" },
         "image_alt": { "type": "string" },
         "long_description": { "$ref": "#/$defs/nullableString" },
         "instructions": { "$ref": "#/$defs/nullableString" },

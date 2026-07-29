@@ -156,6 +156,43 @@ test('empty nested stable IDs fail validation', function () {
     expect(fn () => $matching->validateConfig($config))->toThrow(ValidationException::class);
 });
 
+test('image and image_labeling accept absolute https URLs and root-relative paths', function (string $url) {
+    $registry = app(BlockTypeRegistry::class);
+
+    $image = $registry->get('image');
+    $config = $image->defaultConfig();
+    $config['url'] = $url;
+    expect($image->validateConfig($config))->toBeArray();
+
+    $labeling = $registry->get('image_labeling');
+    $config = $labeling->defaultConfig();
+    $config['image_url'] = $url;
+    expect($labeling->validateConfig($config))->toBeArray();
+})->with([
+    'absolute https URL' => ['https://cdn.example.com/diagram.png'],
+    'absolute http URL' => ['http://cdn.example.com/diagram.png'],
+    'root-relative storage path' => ['/storage/lessons/diagram.png'],
+]);
+
+test('image and image_labeling reject unsafe or malformed URLs', function (string $url) {
+    $registry = app(BlockTypeRegistry::class);
+
+    $image = $registry->get('image');
+    $config = $image->defaultConfig();
+    $config['url'] = $url;
+    expect(fn () => $image->validateConfig($config))->toThrow(ValidationException::class);
+
+    $labeling = $registry->get('image_labeling');
+    $config = $labeling->defaultConfig();
+    $config['image_url'] = $url;
+    expect(fn () => $labeling->validateConfig($config))->toThrow(ValidationException::class);
+})->with([
+    'javascript scheme' => ['javascript:alert(1)'],
+    'data scheme' => ['data:image/png;base64,iVBORw0KGgo='],
+    'protocol-relative' => ['//evil.example/diagram.png'],
+    'relative without slash' => ['storage/diagram.png'],
+]);
+
 test('static table rows with the wrong cell count fail validation', function () {
     $table = app(BlockTypeRegistry::class)->get('static_table');
 

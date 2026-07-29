@@ -3,6 +3,7 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Rules\AssetUrl;
 
 class ImageBlock extends AbstractBlockType
 {
@@ -29,7 +30,7 @@ class ImageBlock extends AbstractBlockType
     public function configRules(): array
     {
         return [
-            'url' => ['required', 'string', 'url:http,https'],
+            'url' => ['required', 'string', new AssetUrl()],
             'alt' => ['required', 'string'],
             'caption' => ['nullable', 'string'],
             'long_description' => ['nullable', 'string'],
