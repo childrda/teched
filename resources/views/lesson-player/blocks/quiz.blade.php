@@ -94,8 +94,11 @@
                 x-text="submitting ? strings.submitting : (latestResult ? strings.retry : strings.submit)"></button>
     </div>
 
+    {{-- Visible only. Deliberately not a live region: the sr-only region
+         below announces this text via announce(), so a second status here
+         would make a screen reader hear the result twice. --}}
     <template x-if="latestResult">
-        <div class="rounded-md border-2 border-slate-500 bg-slate-50 p-4" role="status">
+        <div class="rounded-md border-2 border-slate-500 bg-slate-50 p-4">
             <h3 class="font-semibold" x-text="strings.result_heading"></h3>
             <p class="mt-2 text-base" x-text="resultSummary"></p>
             <p class="mt-2 text-base font-semibold">

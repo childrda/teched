@@ -11,6 +11,7 @@ use App\Support\QuizResponseValidator;
 use App\Support\StudentGradingResult;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use LogicException;
 
 /**
  * Stateless grading for one auto-gradable block against the LessonVersion a
@@ -41,7 +42,8 @@ class GradeBlockController extends Controller
     {
         $lesson = Lesson::query()->where('code', $code)->first();
 
-        if ($lesson === null || $this->studentManifest->forLesson($lesson) === null) {
+        // Availability only — the token decides which version grades.
+        if ($lesson === null || $this->studentManifest->availableVersion($lesson) === null) {
             abort(404);
         }
 
@@ -59,28 +61,37 @@ class GradeBlockController extends Controller
 
         $type = $this->registry->get($block['type']);
 
-        if (! $type->isAutoGradable()) {
+        if (! $type->isAutoGradable() || $type->gradingResponseShape() === null) {
             return response()->json([
                 'message' => 'This block cannot be graded.',
             ], 422);
         }
 
-        // Phase 2C wires quiz through this endpoint. Matching and image
-        // labeling are auto-gradable but have no submit path here yet; their
-        // compiled configs have no questions[], so the quiz validator rejects
-        // every payload. Calling that path keeps one validation entry point.
-        $validatedResponse = $this->quizResponses->validate(
-            is_array($block['config'] ?? null) ? $block['config'] : [],
-            $request->input('response')
-        );
+        $shape = $type->gradingResponseShape();
+        $config = is_array($block['config'] ?? null) ? $block['config'] : [];
+        $grading = is_array($block['grading'] ?? null) ? $block['grading'] : null;
+
+        $validatedResponse = match ($shape) {
+            'quiz_answers' => $this->quizResponses->validate($config, $request->input('response')),
+            default => throw new LogicException(
+                "Block type \"{$type->key()}\" declared grading response shape \"{$shape}\" but no validator is wired for it."
+            ),
+        };
 
         $result = $type->grade(
-            $block['config'],
-            is_array($block['grading'] ?? null) ? $block['grading'] : null,
-            ['answers' => $validatedResponse]
+            $config,
+            $grading,
+            $shape === 'quiz_answers' ? ['answers' => $validatedResponse] : $validatedResponse
         );
 
-        return response()->json($this->studentResults->map($result ?? []));
+        if ($result === null) {
+            // A registered auto-gradable type with a wired submit path that
+            // declines to grade a valid complete payload is a programming
+            // error, not something a student can fix.
+            abort(500);
+        }
+
+        return response()->json($this->studentResults->map($result));
     }
 
     /**

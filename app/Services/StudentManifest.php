@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Blocks\BlockTypeRegistry;
 use App\Enums\LessonStatus;
 use App\Models\Lesson;
+use App\Models\LessonVersion;
 
 /**
  * Builds the single payload every student-facing surface consumes: the
@@ -29,6 +30,21 @@ class StudentManifest
     }
 
     /**
+     * The version a student may play, or null when the lesson has nothing
+     * they may see. The single source of the availability rule: forLesson()
+     * and the grading endpoint both go through here, so the two can never
+     * disagree about what is playable.
+     */
+    public function availableVersion(Lesson $lesson): ?LessonVersion
+    {
+        if ($lesson->status !== LessonStatus::Published) {
+            return null;
+        }
+
+        return $lesson->currentVersion();
+    }
+
+    /**
      * The servable manifest, or null when the lesson has nothing a student
      * may see: any status other than published (drafts and archived
      * lessons stay invisible even when prior versions exist), or a missing
@@ -36,11 +52,7 @@ class StudentManifest
      */
     public function forLesson(Lesson $lesson): ?array
     {
-        if ($lesson->status !== LessonStatus::Published) {
-            return null;
-        }
-
-        $version = $lesson->currentVersion();
+        $version = $this->availableVersion($lesson);
 
         if ($version === null) {
             return null;

@@ -27,6 +27,11 @@ class QuizBlock extends AbstractBlockType
         return true;
     }
 
+    public function gradingResponseShape(): ?string
+    {
+        return 'quiz_answers';
+    }
+
     public function configRules(): array
     {
         return [

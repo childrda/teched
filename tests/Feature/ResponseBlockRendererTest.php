@@ -61,6 +61,21 @@ test('no seeded quiz feedback string appears in the player page source', functio
     }
 });
 
+test('the quiz block has exactly one live region for announcements', function () {
+    $this->seed(WeldingLessonSeeder::class);
+
+    $html = $this->get('/lessons/WEL-6.1.1')->assertOk()->getContent();
+
+    // Isolate the quiz block markup; the player page has other live regions.
+    expect(preg_match(
+        '/data-block-type="quiz"(.*?)data-block-type="/s',
+        $html.'data-block-type="',
+        $matches
+    ))->toBe(1);
+
+    expect(substr_count($matches[1], 'role="status"'))->toBe(1);
+});
+
 test('every speakableText id for the three response blocks has a matching data-speech-id', function () {
     $registry = app(BlockTypeRegistry::class);
     $lesson = Lesson::factory()->create();

@@ -44,6 +44,11 @@ abstract class AbstractBlockType implements BlockType
         return null;
     }
 
+    public function gradingResponseShape(): ?string
+    {
+        return null;
+    }
+
     /**
      * Converts author markup (or plain text) into speech-ready plain text:
      * tags removed, entities decoded, whitespace collapsed.

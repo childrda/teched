@@ -55,6 +55,13 @@ interface BlockType
     public function grade(array $compiledConfig, ?array $grading, array $response): ?array;
 
     /**
+     * The shape of student response this type accepts at the grading
+     * endpoint, or null when it has no submit path yet. Phase 2C wires
+     * only 'quiz_answers'; placement types get their own shape in Phase 3.
+     */
+    public function gradingResponseShape(): ?string;
+
+    /**
      * Returns an ordered list of read-aloud (text-to-speech) segments:
      *   [{ id: string, label: string|null, text: string }]
      *

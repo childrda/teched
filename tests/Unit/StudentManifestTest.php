@@ -18,35 +18,55 @@ function studentManifestFor(Lesson $lesson): ?array
     return app(StudentManifest::class)->forLesson($lesson->fresh());
 }
 
+function availableVersionFor(Lesson $lesson): ?LessonVersion
+{
+    return app(StudentManifest::class)->availableVersion($lesson->fresh());
+}
+
 test('a draft lesson is not servable even when a version row exists', function () {
     $lesson = Lesson::factory()->create();
     LessonVersion::factory()->create(['lesson_id' => $lesson->id, 'version' => 1]);
     $lesson->forceFill(['current_version' => 1])->save();
 
-    expect(studentManifestFor($lesson))->toBeNull();
+    expect(studentManifestFor($lesson))->toBeNull()
+        ->and(availableVersionFor($lesson))->toBeNull();
 });
 
 test('an archived lesson is not servable even though it was published', function () {
     $lesson = createLessonWithAllBlockTypes();
     app(LessonPublisher::class)->publish($lesson, User::factory()->create());
 
-    expect(studentManifestFor($lesson))->not->toBeNull();
+    expect(studentManifestFor($lesson))->not->toBeNull()
+        ->and(availableVersionFor($lesson))->not->toBeNull();
 
     $lesson->forceFill(['status' => LessonStatus::Archived])->save();
 
-    expect(studentManifestFor($lesson))->toBeNull();
+    expect(studentManifestFor($lesson))->toBeNull()
+        ->and(availableVersionFor($lesson))->toBeNull();
 });
 
 test('a published lesson that was never published has nothing to serve', function () {
     $lesson = Lesson::factory()->published()->create(['current_version' => 0]);
 
-    expect(studentManifestFor($lesson))->toBeNull();
+    expect(studentManifestFor($lesson))->toBeNull()
+        ->and(availableVersionFor($lesson))->toBeNull();
 });
 
 test('a published lesson whose current version row is missing has nothing to serve', function () {
     $lesson = Lesson::factory()->published()->create(['current_version' => 7]);
 
-    expect(studentManifestFor($lesson))->toBeNull();
+    expect(studentManifestFor($lesson))->toBeNull()
+        ->and(availableVersionFor($lesson))->toBeNull();
+});
+
+test('availableVersion returns the current version for a published lesson', function () {
+    $lesson = createLessonWithAllBlockTypes();
+    app(LessonPublisher::class)->publish($lesson, User::factory()->create());
+
+    $version = availableVersionFor($lesson);
+
+    expect($version)->not->toBeNull()
+        ->and($version->id)->toBe($lesson->fresh()->currentVersion()->id);
 });
 
 test('a published lesson is served with redacted configs and speech', function () {

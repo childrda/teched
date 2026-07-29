@@ -173,9 +173,91 @@ test('non-auto-gradable and placement blocks cannot be graded through the endpoi
     $payload = studentPayload($lesson);
     $block = blockOfType($payload['pages'], $type);
 
+    // Same generic body whether the type is not auto-gradable or is
+    // auto-gradable but has no submit path yet — neither reveals which.
     grade($lesson->code, $block['block_id'], $payload['grading_token'], ['anything' => 'goes'])
-        ->assertStatus(422);
+        ->assertStatus(422)
+        ->assertExactJson(['message' => 'This block cannot be graded.']);
 })->with(['short_response', 'cer', 'matching', 'image_labeling']);
+
+test('a null grade from an auto-gradable type is a server error, not a 200', function () {
+    $registry = app(App\Blocks\BlockTypeRegistry::class);
+    $original = $registry->get('quiz');
+
+    $registry->register(new class($original) extends App\Blocks\AbstractBlockType
+    {
+        public function __construct(private App\Blocks\Contracts\BlockType $inner)
+        {
+        }
+
+        public function key(): string
+        {
+            return $this->inner->key();
+        }
+
+        public function label(): string
+        {
+            return $this->inner->label();
+        }
+
+        public function isAutoGradable(): bool
+        {
+            return true;
+        }
+
+        public function collectsResponse(): bool
+        {
+            return true;
+        }
+
+        public function gradingResponseShape(): ?string
+        {
+            return 'quiz_answers';
+        }
+
+        public function configRules(): array
+        {
+            return $this->inner->configRules();
+        }
+
+        public function defaultConfig(): array
+        {
+            return $this->inner->defaultConfig();
+        }
+
+        public function compileConfig(array $validatedConfig): array
+        {
+            return $this->inner->compileConfig($validatedConfig);
+        }
+
+        public function redactConfig(array $compiledConfig): array
+        {
+            return $this->inner->redactConfig($compiledConfig);
+        }
+
+        public function speakableText(array $redactedConfig): array
+        {
+            return $this->inner->speakableText($redactedConfig);
+        }
+
+        public function grade(array $compiledConfig, ?array $grading, array $response): ?array
+        {
+            return null;
+        }
+    });
+
+    try {
+        $lesson = publishLesson(createLessonWithAllBlockTypes());
+        $payload = studentPayload($lesson);
+        $quiz = blockOfType($lesson->currentVersion()->manifest['pages'], 'quiz');
+        $answers = correctQuizAnswers($quiz['config']);
+
+        grade($lesson->code, $quiz['block_id'], $payload['grading_token'], $answers)
+            ->assertStatus(500);
+    } finally {
+        $registry->register($original);
+    }
+});
 
 test('an unknown block id returns 404', function () {
     $lesson = publishLesson(createLessonWithAllBlockTypes());
