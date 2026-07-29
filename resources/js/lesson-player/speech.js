@@ -16,6 +16,14 @@ export const SPEECH_STORAGE_KEYS = Object.freeze({
 
 export const RATE = Object.freeze({ min: 0.5, max: 2, step: 0.1, default: 1 });
 
+/**
+ * Chrome and Edge silently discard an utterance handed to speak() in the same
+ * task as a cancel(), so queueing always waits for a later task. After a real
+ * cancel a setTimeout(0) is still unreliable there — the queue needs a moment
+ * to actually drain — hence the two delays.
+ */
+const QUEUE_DELAY_MS = Object.freeze({ afterCancel: 100, otherwise: 0 });
+
 export function clampRate(value) {
   const rate = Number(value);
 
@@ -117,14 +125,31 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
     onSegmentChange?.(null, null);
   }
 
+  /**
+   * Cancelling nothing still costs the caller a settling delay, so it is only
+   * done when there is something to cancel.
+   *
+   * @returns {boolean} whether a cancel was actually issued
+   */
+  function cancelIfQueued() {
+    if (!supported || !(synthesis.speaking || synthesis.pending)) {
+      return false;
+    }
+
+    synthesis.cancel();
+
+    return true;
+  }
+
+  /** @returns {boolean} whether a cancel was actually issued */
   function stop() {
     run += 1;
 
-    if (supported) {
-      synthesis.cancel();
-    }
+    const cancelled = cancelIfQueued();
 
     clearActive();
+
+    return cancelled;
   }
 
   function speak(blockId, segments) {
@@ -141,7 +166,7 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
     }
 
     // Anything queued for another block is dropped before this one starts.
-    stop();
+    const cancelled = stop();
 
     const thisRun = run;
     const voice = resolveVoice();
@@ -154,42 +179,58 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
     state.paused = false;
     state.activeBlockId = blockId;
 
-    speakable.forEach((segment, index) => {
-      const utterance = new Utterance(utteranceTextFor(segment));
-
-      utterance.rate = rate;
-
-      if (voice) {
-        utterance.voice = voice;
+    // Queueing is deferred to a later task; see QUEUE_DELAY_MS.
+    setTimeout(() => {
+      // A second click, a page change, or a teardown in the meantime already
+      // started its own run, and speaking now would double up on it.
+      if (thisRun !== run) {
+        return;
       }
 
-      utterance.onstart = () => {
-        if (thisRun !== run) {
-          return;
+      // Chrome can leave the synthesis object paused, and speak() on a paused
+      // object queues silently and never plays. A student who paused during
+      // the delay above is left alone: their utterances wait for resume().
+      if (!state.paused) {
+        synthesis.resume();
+      }
+
+      speakable.forEach((segment, index) => {
+        const utterance = new Utterance(utteranceTextFor(segment));
+
+        utterance.rate = rate;
+
+        if (voice) {
+          utterance.voice = voice;
         }
 
-        state.activeSegmentId = segment.id;
-        onSegmentChange?.(blockId, segment.id);
-      };
+        utterance.onstart = () => {
+          if (thisRun !== run) {
+            return;
+          }
 
-      utterance.onend = () => {
-        if (thisRun !== run || index !== speakable.length - 1) {
-          return;
-        }
+          state.activeSegmentId = segment.id;
+          onSegmentChange?.(blockId, segment.id);
+        };
 
-        clearActive();
-      };
+        utterance.onend = () => {
+          if (thisRun !== run || index !== speakable.length - 1) {
+            return;
+          }
 
-      utterance.onerror = () => {
-        if (thisRun !== run) {
-          return;
-        }
+          clearActive();
+        };
 
-        clearActive();
-      };
+        utterance.onerror = () => {
+          if (thisRun !== run) {
+            return;
+          }
 
-      synthesis.speak(utterance);
-    });
+          clearActive();
+        };
+
+        synthesis.speak(utterance);
+      });
+    }, cancelled ? QUEUE_DELAY_MS.afterCancel : QUEUE_DELAY_MS.otherwise);
   }
 
   function pause() {
