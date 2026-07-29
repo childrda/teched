@@ -24,6 +24,7 @@
                         :aria-label="item.name"
                         draggable="true"
                         @dragstart="dragItem(item.id, $event)"
+                        @dragend="dragEnded()"
                         @click="toggleItem(item.id)">
                     {{-- Held is carried by a symbol and a heavier border as
                          well as by colour. --}}

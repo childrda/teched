@@ -28,6 +28,7 @@
             :aria-label="slotName({{ $slotId }})"
             :draggable="isFilled({{ $slotId }}) ? 'true' : 'false'"
             @dragstart="dragItem(itemIn({{ $slotId }}), $event)"
+            @dragend="dragEnded()"
             @dragover.prevent
             @drop.prevent="dropOnSlot({{ $slotId }}, {{ $layerName }}, $event)"
             @click="activateSlot({{ $slotId }}, {{ $layerName }})">

@@ -15,6 +15,10 @@ function contributor(category, satisfied, overrides = {}) {
         id: `block:${category}`,
         category,
         isSatisfied: () => satisfied,
+        // Registration requires a gradable contributor to implement
+        // isPassed(); mirroring isSatisfied keeps the category sweeps in
+        // one state under every rule.
+        ...(category === 'gradable' ? { isPassed: () => satisfied } : {}),
         message: `${category} is not finished`,
         ...overrides,
     };
@@ -120,15 +124,20 @@ describe('finishing an activity versus passing it', () => {
         }
     });
 
-    it('falls back to isSatisfied when a gradable contributor has no isPassed', () => {
+    it('rejects a gradable contributor without isPassed rather than falling back', () => {
         const registry = createCompletionRegistry();
-        registry.register(PAGE, contributor('gradable', true));
 
-        expect(registry.evaluate(PAGE, 'pass_activity', { shown: true }).satisfied).toBe(true);
+        expect(() =>
+            registry.register(PAGE, {
+                id: 'block:quiz',
+                category: 'gradable',
+                isSatisfied: () => true,
+                message: '',
+            }),
+        ).toThrow(/Gradable contributor "block:quiz" needs an isPassed\(\) function/);
 
-        registry.register(PAGE, contributor('gradable', false));
-
-        expect(registry.evaluate(PAGE, 'pass_activity', { shown: true }).satisfied).toBe(false);
+        // Nothing half-registered: the page still evaluates as empty.
+        expect(registry.contributors(PAGE)).toEqual([]);
     });
 
     it('ignores isPassed outside pass_activity and outside the gradable category', () => {

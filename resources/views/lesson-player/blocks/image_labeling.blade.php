@@ -22,7 +22,7 @@
      @keydown.escape="cancel()">
 
     @if (filled($config['instructions'] ?? null))
-        <p class="text-base/7">{{ $config['instructions'] }}</p>
+        <p class="text-base/7" data-speech-id="instructions">{{ $config['instructions'] }}</p>
     @endif
 
     @include('lesson-player.placement.bank', ['blockId' => $blockId])
@@ -57,6 +57,7 @@
                             :aria-label="slotName({{ $slotId }})"
                             :draggable="isFilled({{ $slotId }}) ? 'true' : 'false'"
                             @dragstart="dragItem(itemIn({{ $slotId }}), $event)"
+                            @dragend="dragEnded()"
                             @dragover.prevent
                             @drop.prevent="dropOnSlot({{ $slotId }}, 'hotspots', $event)"
                             @click="activateSlot({{ $slotId }}, 'hotspots')">

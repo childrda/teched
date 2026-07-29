@@ -18,9 +18,10 @@
  * Finishing and passing are separate questions. isSatisfied() answers "has
  * the student done this?"; isPassed() answers "did they meet the bar?" A
  * submitted quiz scoring 40% is satisfied but not passed, and a page may
- * legitimately require either one. Phase 2B's activity blocks must therefore
- * implement BOTH: without isPassed(), a gradable contributor falls back to
- * isSatisfied() and a pass_activity page would let a failing score through.
+ * legitimately require either one. A gradable contributor must therefore
+ * implement BOTH predicates, and registration rejects one that does not:
+ * falling back to isSatisfied() under pass_activity would let a
+ * completed-but-failed activity open the gate.
  *
  * Content blocks register nothing by default: a page of prose, images, and
  * tables is complete as soon as it is shown. A video registers a single
@@ -100,10 +101,16 @@ export function createCompletionRegistry() {
       throw new TypeError(`Contributor "${contributor.id}" needs an isSatisfied() function.`);
     }
 
-    // Absent is fine and falls back to isSatisfied(); present but not
-    // callable would fall back silently and quietly pass a failing student.
     if (contributor.isPassed !== undefined && typeof contributor.isPassed !== 'function') {
       throw new TypeError(`Contributor "${contributor.id}" has an isPassed that is not a function.`);
+    }
+
+    // Mandatory, not merely documented: pass_activity calls isPassed()
+    // directly, and a missing one must fail here rather than at the gate.
+    if (contributor.category === 'gradable' && typeof contributor.isPassed !== 'function') {
+      throw new TypeError(
+        `Gradable contributor "${contributor.id}" needs an isPassed() function; see the contract comment at the top of this file.`,
+      );
     }
   }
 
@@ -151,11 +158,8 @@ export function createCompletionRegistry() {
    */
   function meetsRule(contributor, rule) {
     if (rule === 'pass_activity' && contributor.category === 'gradable') {
-      // Falling back keeps a 2B activity that has not implemented isPassed()
-      // yet from throwing; it is stricter about nothing, never looser.
-      const predicate = contributor.isPassed ?? contributor.isSatisfied;
-
-      return predicate.call(contributor) === true;
+      // Registration guarantees a gradable contributor has isPassed().
+      return contributor.isPassed() === true;
     }
 
     return contributor.isSatisfied() === true;

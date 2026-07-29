@@ -158,10 +158,11 @@ class MatchingBlock extends AbstractBlockType
     }
 
     /**
-     * Reads the instructions, then the bank labels, then the slot
-     * descriptions as separate groups rather than label-followed-by-answer.
-     * Segments carry stable ids, so a player that shuffles the bank speaks
-     * each group in the order it actually rendered.
+     * Reads the instructions, then the bank labels in compiled order, then
+     * the slot descriptions — separate groups rather than
+     * label-followed-by-answer. Segments carry stable ids, so highlighting
+     * follows each spoken item even when the player has shuffled the bank —
+     * but the spoken order of terms is manifest order, not display order.
      */
     public function speakableText(array $redactedConfig): array
     {

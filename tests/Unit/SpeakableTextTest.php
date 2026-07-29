@@ -106,16 +106,40 @@ test('image reads alt text then long description', function () {
     ]);
 });
 
-test('image_labeling reads alt text then long description', function () {
+test('image_labeling reads instructions, then alt text, then long description', function () {
     $type = app(BlockTypeRegistry::class)->get('image_labeling');
 
     $config = $type->defaultConfig();
+    $config['instructions'] = 'Drag each label onto its point.';
     $config['image_alt'] = 'Weld diagram';
     $config['long_description'] = 'Shows the torch and the weld pool.';
 
-    expect(array_column(speechFor('image_labeling', $config), 'text'))->toBe([
+    $segments = speechFor('image_labeling', $config);
+
+    expect($segments[0])->toBe([
+        'id' => 'instructions',
+        'label' => 'Instructions',
+        'text' => 'Drag each label onto its point.',
+    ]);
+
+    expect(array_column($segments, 'text'))->toBe([
+        'Drag each label onto its point.',
         'Weld diagram',
         'Shows the torch and the weld pool.',
+    ]);
+});
+
+test('image_labeling without instructions emits no instructions segment', function () {
+    $type = app(BlockTypeRegistry::class)->get('image_labeling');
+
+    $config = $type->defaultConfig();
+    $config['instructions'] = null;
+    $config['image_alt'] = 'Weld diagram';
+    $config['long_description'] = 'Shows the torch and the weld pool.';
+
+    expect(array_column(speechFor('image_labeling', $config), 'id'))->toBe([
+        'image_alt',
+        'long_description',
     ]);
 });
 

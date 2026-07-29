@@ -284,6 +284,17 @@ export function placementActivity(config = {}) {
       }
     },
 
+    /**
+     * dragend fires after every drag, dropped or not. After a successful
+     * drop nothing is held and this is a no-op; after an aborted drag it
+     * cancels the selection so the item is not silently left picked up.
+     * Focus is not moved: pickedUpFrom is only set by tapping, so a
+     * mouse-initiated drag cancels without yanking focus anywhere.
+     */
+    dragEnded() {
+      this.cancel();
+    },
+
     /** Selection without the toggle, for a drag that has already begun. */
     hold(itemId) {
       if (!this.isHolding(itemId)) {

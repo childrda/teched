@@ -395,6 +395,31 @@ describe('dragging with a mouse', () => {
         expect(dataTransfer.getData('text/plain')).toBe('');
         expect(component.state.selectedItemId).toBeNull();
     });
+
+    it('cancels an aborted drag instead of leaving the item held', () => {
+        const component = activity();
+
+        component.dragItem('i1', { dataTransfer: transfer() });
+        component.dragEnded();
+
+        expect(component.state.selectedItemId).toBeNull();
+        expect(component.announcement).toBe(STRINGS.cancelled);
+
+        // A drag was never a tap, so there is no item to hand focus back to.
+        expect(focused).toEqual([]);
+    });
+
+    it('does nothing on the dragend that follows a successful drop', () => {
+        const component = activity();
+        const dataTransfer = transfer();
+
+        component.dragItem('i1', { dataTransfer });
+        component.dropOnSlot('s1', 'rows', { dataTransfer });
+        component.dragEnded();
+
+        expect(component.state.placements.s1).toBe('i1');
+        expect(component.announcement).toBe('Arc placed at Row 1');
+    });
 });
 
 describe('when the diagram does not load', () => {
