@@ -57,4 +57,18 @@ class CalloutBlock extends AbstractBlockType
             'html' => $this->sanitizer->sanitize($validatedConfig['html']),
         ];
     }
+
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment(
+            $segments,
+            'html',
+            $redactedConfig['heading'] ?? null,
+            $redactedConfig['html'] ?? null
+        );
+
+        return $segments;
+    }
 }

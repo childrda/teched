@@ -43,6 +43,63 @@ abstract class AbstractBlockType implements BlockType
         return null;
     }
 
+    /** Tags that sit inside a sentence and must not introduce a space. */
+    private const INLINE_TAGS = 'a|abbr|b|cite|code|em|i|q|s|small|span|strong|sub|sup|u|var';
+
+    /**
+     * Converts author markup (or plain text) into speech-ready plain text:
+     * tags removed, entities decoded, whitespace collapsed. Inline tags
+     * vanish so words and punctuation stay intact, while every other tag
+     * becomes a space so adjacent blocks never run their words together.
+     */
+    protected function toPlainText(?string $html): string
+    {
+        if ($html === null) {
+            return '';
+        }
+
+        $text = preg_replace('#</?(?:' . self::INLINE_TAGS . ')(?:\s[^>]*)?>#i', '', $html) ?? $html;
+        $text = preg_replace('/<[^>]*>/', ' ', $text) ?? '';
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/\s+/u', ' ', $text) ?? '';
+
+        return trim(preg_replace('/ +([.,;:!?])/u', '$1', $text) ?? $text);
+    }
+
+    /**
+     * Appends a speech segment, skipping it when there is nothing to say.
+     *
+     * @param list<array{id: string, label: ?string, text: string}> $segments
+     */
+    protected function pushSegment(array &$segments, string $id, ?string $label, ?string $text): void
+    {
+        $plainText = $this->toPlainText($text);
+
+        if ($plainText === '') {
+            return;
+        }
+
+        $plainLabel = $this->toPlainText($label);
+
+        $segments[] = [
+            'id' => $id,
+            'label' => $plainLabel === '' ? null : $plainLabel,
+            'text' => $plainText,
+        ];
+    }
+
+    /** Spoken option letters: A, B, ... Z, AA, AB, ... */
+    protected function optionLetter(int $index): string
+    {
+        $letter = '';
+
+        for ($n = $index; $n >= 0; $n = intdiv($n, 26) - 1) {
+            $letter = chr(65 + ($n % 26)) . $letter;
+        }
+
+        return $letter;
+    }
+
     /**
      * Asserts every ['id' => ...] entry in $items is a non-empty string and
      * distinct within the list.

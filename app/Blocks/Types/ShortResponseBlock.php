@@ -68,4 +68,15 @@ class ShortResponseBlock extends AbstractBlockType
 
         return $redacted;
     }
+
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        // rubric_html is already absent from a redacted config, so a rubric
+        // can never be spoken to a student.
+        $this->pushSegment($segments, 'prompt', null, $redactedConfig['prompt_html'] ?? null);
+
+        return $segments;
+    }
 }

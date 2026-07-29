@@ -21,6 +21,7 @@ class LessonPage extends Model
         'allow_back_navigation' => true,
         'allow_skip' => false,
         'show_in_nav' => true,
+        'allow_read_aloud' => true,
     ];
 
     protected $guarded = [];
@@ -44,7 +45,22 @@ class LessonPage extends Model
 
             // Application-level JSON default (MariaDB/MySQL JSON columns
             // cannot be relied on for expression defaults).
-            $page->settings = array_merge(self::DEFAULT_SETTINGS, $page->settings ?? []);
+            $provided = $page->settings ?? [];
+            $defaults = self::DEFAULT_SETTINGS;
+
+            // A new page seeds allow_read_aloud from the lesson's authoring
+            // default unless the caller set it explicitly. This happens only
+            // at creation: changing the lesson default later never touches
+            // pages that already exist.
+            if (! array_key_exists('allow_read_aloud', $provided)) {
+                $lessonDefault = $page->lesson?->settings['default_allow_read_aloud'] ?? null;
+
+                if (is_bool($lessonDefault)) {
+                    $defaults['allow_read_aloud'] = $lessonDefault;
+                }
+            }
+
+            $page->settings = array_merge($defaults, $provided);
         });
 
         $flagLesson = function (LessonPage $page) {

@@ -15,6 +15,15 @@ class Lesson extends Model
     use HasFactory;
     use SoftDeletes;
 
+    /**
+     * Authoring-only lesson settings. These never appear in a compiled
+     * manifest: default_allow_read_aloud seeds a new page's
+     * settings.allow_read_aloud and is not consulted again afterwards.
+     */
+    public const DEFAULT_SETTINGS = [
+        'default_allow_read_aloud' => true,
+    ];
+
     protected $guarded = [];
 
     protected function casts(): array
@@ -23,6 +32,7 @@ class Lesson extends Model
             'status' => LessonStatus::class,
             'success_criteria' => 'array',
             'standards' => 'array',
+            'settings' => 'array',
             'current_version' => 'integer',
             'estimated_minutes' => 'integer',
             'has_unpublished_changes' => 'boolean',
@@ -35,6 +45,10 @@ class Lesson extends Model
             if (blank($lesson->uuid)) {
                 $lesson->uuid = (string) Str::uuid();
             }
+
+            // Application-level JSON default (MariaDB/MySQL JSON columns
+            // cannot be relied on for expression defaults).
+            $lesson->settings = array_merge(self::DEFAULT_SETTINGS, $lesson->settings ?? []);
         });
     }
 

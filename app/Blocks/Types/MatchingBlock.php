@@ -93,4 +93,38 @@ class MatchingBlock extends AbstractBlockType
 
         return $this->buildGradingResult(array_values($details), $grading);
     }
+
+    /**
+     * Reads the instructions, then the terms, then the descriptions as
+     * separate groups rather than term-followed-by-its-description.
+     * Segments carry stable ids, so a player that shuffles speaks each
+     * group in the order it actually rendered.
+     */
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+        $pairs = array_values($redactedConfig['pairs'] ?? []);
+
+        $this->pushSegment($segments, 'instructions', 'Instructions', $redactedConfig['instructions'] ?? null);
+
+        foreach ($pairs as $index => $pair) {
+            $this->pushSegment(
+                $segments,
+                ($pair['id'] ?? $index) . ':label',
+                'Term',
+                $pair['label'] ?? null
+            );
+        }
+
+        foreach ($pairs as $index => $pair) {
+            $this->pushSegment(
+                $segments,
+                ($pair['id'] ?? $index) . ':description',
+                'Description',
+                $pair['description'] ?? null
+            );
+        }
+
+        return $segments;
+    }
 }

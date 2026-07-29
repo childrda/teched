@@ -75,4 +75,39 @@ class StaticTableBlock extends AbstractBlockType
             )),
         ];
     }
+
+    /**
+     * Linearizes each row so it makes sense without the visual grid:
+     * "<row header>. <column header>: <cell>. <column header>: <cell>."
+     */
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment($segments, 'caption', null, $redactedConfig['caption'] ?? null);
+
+        $headers = array_values($redactedConfig['headers'] ?? []);
+
+        foreach (array_values($redactedConfig['rows'] ?? []) as $rowIndex => $row) {
+            $cells = array_values(is_array($row) ? $row : []);
+
+            if ($cells === []) {
+                continue;
+            }
+
+            // The first cell names the row; the rest are paired with their
+            // column header.
+            $sentence = rtrim($this->toPlainText($cells[0]), ' .') . '.';
+
+            foreach (array_slice($cells, 1) as $offset => $cell) {
+                $columnHeader = $this->toPlainText($headers[$offset + 1] ?? '');
+
+                $sentence .= ' ' . $columnHeader . ': ' . rtrim($this->toPlainText($cell), ' .') . '.';
+            }
+
+            $this->pushSegment($segments, "row:{$rowIndex}", 'Row ' . ($rowIndex + 1), $sentence);
+        }
+
+        return $segments;
+    }
 }

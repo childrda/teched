@@ -12,6 +12,10 @@ use Illuminate\Http\JsonResponse;
  * Serves the published, redacted manifest students consume. Students
  * never see live authoring rows: only a compiled LessonVersion manifest
  * with every block config passed through its type's redactConfig().
+ *
+ * Each block also carries a "speech" list of read-aloud segments derived
+ * at read time from the redacted config. Speech is never stored in the
+ * manifest, so no schema_version change is involved.
  */
 class LessonManifestController extends Controller
 {
@@ -40,10 +44,18 @@ class LessonManifestController extends Controller
         $manifest = $version->manifest;
 
         $manifest['pages'] = array_map(function (array $page) {
-            $page['blocks'] = array_map(function (array $block) {
+            // Already resolved at compile time; no further resolution here.
+            $readAloud = (bool) ($page['settings']['allow_read_aloud'] ?? true);
+
+            $page['blocks'] = array_map(function (array $block) use ($readAloud) {
                 $type = $this->registry->get($block['type']);
 
-                $block['config'] = $type->redactConfig($block['config']);
+                $redacted = $type->redactConfig($block['config']);
+
+                // Speech is derived from the REDACTED config only, so an
+                // answer, rubric, or feedback string can never be spoken.
+                $block['config'] = $redacted;
+                $block['speech'] = $readAloud ? $type->speakableText($redacted) : [];
 
                 return $block;
             }, $page['blocks']);

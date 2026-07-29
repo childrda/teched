@@ -20,6 +20,7 @@ return new class extends Migration
             $table->text('learning_target')->nullable();
             $table->json('success_criteria')->nullable();
             $table->json('standards')->nullable();
+            $table->json('settings');
             $table->string('status')->default('draft');
             $table->unsignedInteger('current_version')->default(0);
             $table->boolean('has_unpublished_changes')->default(false);

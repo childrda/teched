@@ -51,4 +51,13 @@ class RichTextBlock extends AbstractBlockType
             'html' => $this->sanitizer->sanitize($validatedConfig['html']),
         ];
     }
+
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment($segments, 'html', null, $redactedConfig['html'] ?? null);
+
+        return $segments;
+    }
 }

@@ -83,4 +83,27 @@ class VideoBlock extends AbstractBlockType
             'transcript_html' => $this->sanitizer->sanitize($validatedConfig['transcript_html'] ?? null),
         ];
     }
+
+    /**
+     * Reads the framing around the video — never the video itself, and not
+     * its transcript, which the player surfaces separately as captions.
+     */
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment($segments, 'title', null, $redactedConfig['title'] ?? null);
+        $this->pushSegment($segments, 'instructions', 'Instructions', $redactedConfig['instructions'] ?? null);
+
+        foreach (array_values($redactedConfig['focus_questions'] ?? []) as $index => $question) {
+            $this->pushSegment(
+                $segments,
+                'focus_question:' . ($question['id'] ?? $index),
+                'Focus question ' . ($index + 1),
+                $question['text'] ?? null
+            );
+        }
+
+        return $segments;
+    }
 }

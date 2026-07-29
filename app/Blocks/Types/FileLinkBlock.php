@@ -55,4 +55,13 @@ class FileLinkBlock extends AbstractBlockType
             'opens_in_new_tab' => (bool) $validatedConfig['opens_in_new_tab'],
         ];
     }
+
+    /**
+     * A download link has nothing to read aloud: its label and description
+     * are chrome around the file, spoken by the player's own link affordance.
+     */
+    public function speakableText(array $redactedConfig): array
+    {
+        return [];
+    }
 }

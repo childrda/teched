@@ -79,4 +79,22 @@ class CerBlock extends AbstractBlockType
             )),
         ];
     }
+
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment($segments, 'scenario', null, $redactedConfig['scenario_html'] ?? null);
+
+        foreach (array_values($redactedConfig['fields'] ?? []) as $index => $field) {
+            $this->pushSegment(
+                $segments,
+                ($field['id'] ?? $index) . ':label',
+                null,
+                $field['label'] ?? null
+            );
+        }
+
+        return $segments;
+    }
 }

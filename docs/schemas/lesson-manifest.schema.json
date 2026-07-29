@@ -82,7 +82,8 @@
         "require_all_blocks",
         "allow_back_navigation",
         "allow_skip",
-        "show_in_nav"
+        "show_in_nav",
+        "allow_read_aloud"
       ],
       "additionalProperties": false,
       "properties": {
@@ -90,7 +91,11 @@
         "require_all_blocks": { "type": "boolean" },
         "allow_back_navigation": { "type": "boolean" },
         "allow_skip": { "type": "boolean" },
-        "show_in_nav": { "type": "boolean" }
+        "show_in_nav": { "type": "boolean" },
+        "allow_read_aloud": {
+          "type": "boolean",
+          "description": "Whether text-to-speech read-aloud is offered on this page. Already resolved at compile time: the player performs no further resolution."
+        }
       }
     },
     "grading": {

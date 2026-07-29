@@ -74,4 +74,19 @@ class VocabularyCardsBlock extends AbstractBlockType
             'reveal_mode' => $validatedConfig['reveal_mode'],
         ];
     }
+
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        foreach (array_values($redactedConfig['terms'] ?? []) as $index => $term) {
+            $id = $term['id'] ?? $index;
+
+            $this->pushSegment($segments, "{$id}:term", 'Term ' . ($index + 1), $term['term'] ?? null);
+            $this->pushSegment($segments, "{$id}:definition", 'Definition', $term['definition'] ?? null);
+            $this->pushSegment($segments, "{$id}:analogy", 'Analogy', $term['analogy'] ?? null);
+        }
+
+        return $segments;
+    }
 }

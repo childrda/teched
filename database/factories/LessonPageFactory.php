@@ -22,7 +22,9 @@ class LessonPageFactory extends Factory
             'position' => fake()->unique()->numberBetween(1, 1000000),
             'completion_type' => PageCompletionType::View,
             'estimated_minutes' => fake()->numberBetween(2, 15),
-            'settings' => LessonPage::DEFAULT_SETTINGS,
+            // Left empty so the model's creating hook applies defaults and
+            // inherits the lesson's read-aloud default, as real callers do.
+            'settings' => [],
         ];
     }
 }

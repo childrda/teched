@@ -56,4 +56,19 @@ class ImageBlock extends AbstractBlockType
             'long_description' => $validatedConfig['long_description'] ?? null,
         ];
     }
+
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment($segments, 'alt', 'Image', $redactedConfig['alt'] ?? null);
+        $this->pushSegment(
+            $segments,
+            'long_description',
+            'Image description',
+            $redactedConfig['long_description'] ?? null
+        );
+
+        return $segments;
+    }
 }

@@ -31,6 +31,10 @@ publish() ──compiles──▶ LessonVersion (immutable manifest JSON)
   can reference (questions, options, terms, pairs, hotspots, bank items,
   CER fields) carry stable ULID string IDs. Reordering never changes them —
   use `LessonPage::reorderWithin()` / `LessonBlock::reorderWithin()`.
+- **Read-aloud is derived, not stored.** The API adds plain-text speech
+  segments to each block from its type's `speakableText()`, computed from
+  the redacted config so answers can never be spoken. Teachers can switch
+  it off per page via `settings.allow_read_aloud`.
 
 The manifest contract lives in
 [`docs/schemas/lesson-manifest.schema.json`](docs/schemas/lesson-manifest.schema.json)
@@ -96,10 +100,11 @@ only a new class plus registration:
 1. Create `App\Blocks\Types\YourBlock` extending
    `App\Blocks\AbstractBlockType` (or implementing
    `App\Blocks\Contracts\BlockType`). Implement `key()`, `label()`, the
-   capability flags, `configRules()`, `defaultConfig()`, and — as needed —
-   `afterValidation()` for cross-field checks, `compileConfig()`,
-   `redactConfig()` (strip anything answer-revealing), and `grade()` for
-   auto-gradable types.
+   capability flags, `configRules()`, `defaultConfig()`,
+   `speakableText()` (return `[]` if there is nothing to read aloud), and —
+   as needed — `afterValidation()` for cross-field checks,
+   `compileConfig()`, `redactConfig()` (strip anything answer-revealing),
+   and `grade()` for auto-gradable types.
 2. Add the class to the `BLOCK_TYPES` list in
    `App\Providers\BlockTypeServiceProvider`.
 3. Add the key to the `App\Enums\BlockType` enum (and the JSON Schema's

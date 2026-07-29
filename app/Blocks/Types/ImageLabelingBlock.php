@@ -167,4 +167,24 @@ class ImageLabelingBlock extends AbstractBlockType
 
         return $this->buildGradingResult(array_values($details), $grading);
     }
+
+    /**
+     * Reads the image's alternative text and then its long description.
+     * Hotspot descriptions and bank labels are interactive affordances the
+     * player announces as the student moves between them.
+     */
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        $this->pushSegment($segments, 'image_alt', 'Image', $redactedConfig['image_alt'] ?? null);
+        $this->pushSegment(
+            $segments,
+            'long_description',
+            'Image description',
+            $redactedConfig['long_description'] ?? null
+        );
+
+        return $segments;
+    }
 }

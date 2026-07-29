@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\LessonStatus;
+use App\Models\Lesson;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -24,6 +25,7 @@ class LessonFactory extends Factory
             'learning_target' => fake()->sentence(),
             'success_criteria' => [fake()->sentence(), fake()->sentence()],
             'standards' => [fake()->bothify('STD-##.#')],
+            'settings' => Lesson::DEFAULT_SETTINGS,
             'status' => LessonStatus::Draft,
             'current_version' => 0,
             'has_unpublished_changes' => false,

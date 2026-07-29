@@ -53,4 +53,20 @@ interface BlockType
      * auto-gradable.
      */
     public function grade(array $compiledConfig, ?array $grading, array $response): ?array;
+
+    /**
+     * Returns an ordered list of read-aloud (text-to-speech) segments:
+     *   [{ id: string, label: string|null, text: string }]
+     *
+     * `text` is plain text — all markup stripped and whitespace collapsed.
+     * `label` is an optional spoken lead-in ("Question 1", "Definition").
+     * Blocks with nothing to read return an empty list.
+     *
+     * Receives a REDACTED config (the output of redactConfig()), never the
+     * raw compiled config, so answers and feedback can never reach speech.
+     * Must not mutate the given array.
+     *
+     * @return list<array{id: string, label: ?string, text: string}>
+     */
+    public function speakableText(array $redactedConfig): array;
 }

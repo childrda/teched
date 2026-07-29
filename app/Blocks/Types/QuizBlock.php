@@ -149,4 +149,36 @@ class QuizBlock extends AbstractBlockType
 
         return $this->buildGradingResult(array_values($details), $grading);
     }
+
+    /**
+     * Reads each question prompt followed by its lettered options. A
+     * redacted config carries no answer_id, feedback, or source_ref, so
+     * none of them can reach a speech segment.
+     */
+    public function speakableText(array $redactedConfig): array
+    {
+        $segments = [];
+
+        foreach (array_values($redactedConfig['questions'] ?? []) as $questionIndex => $question) {
+            $questionId = $question['id'] ?? $questionIndex;
+
+            $this->pushSegment(
+                $segments,
+                "{$questionId}:prompt",
+                'Question ' . ($questionIndex + 1),
+                $question['prompt'] ?? null
+            );
+
+            foreach (array_values($question['options'] ?? []) as $optionIndex => $option) {
+                $this->pushSegment(
+                    $segments,
+                    "{$questionId}:" . ($option['id'] ?? $optionIndex),
+                    'Option ' . $this->optionLetter($optionIndex),
+                    $option['text'] ?? null
+                );
+            }
+        }
+
+        return $segments;
+    }
 }

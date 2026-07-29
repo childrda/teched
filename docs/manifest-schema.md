@@ -57,7 +57,8 @@ authored blocks.
     "require_all_blocks": false,
     "allow_back_navigation": true,
     "allow_skip": false,
-    "show_in_nav": true
+    "show_in_nav": true,
+    "allow_read_aloud": true
   },
   "blocks": [ /* block objects, ordered by position */ ]
 }
@@ -65,6 +66,13 @@ authored blocks.
 
 `completion_type` is one of `view`, `submit_required`, `complete_activity`,
 `pass_activity`, `confirm_video`.
+
+`allow_read_aloud` controls whether text-to-speech is offered on this page,
+so a teacher can switch it off where an IEP distinguishes instruction from
+reading assessment. It is **already resolved** at compile time — exactly one
+boolean per page — and the player performs no further resolution. The
+authoring-side `lessons.settings.default_allow_read_aloud` only seeds this
+value when a page is first created and never appears in a manifest.
 
 ## Block wrapper
 
@@ -292,6 +300,59 @@ hotspot `number`s are unique within the block.
 ```
 
 Every question's `answer_id` references one of that question's own options.
+
+## Read-aloud (text-to-speech)
+
+Read-aloud speech is **derived at read time, never stored in the manifest** —
+adding it required no migration and no `schema_version` change. The student
+API adds a `speech` array to every block, alongside (not inside) `config`:
+
+```json
+{
+  "block_id": "01JD2W5R7P4GJXW8KQZC3VMB4T",
+  "type": "quiz",
+  "config": { /* redacted */ },
+  "grading": { /* ... */ },
+  "speech": [
+    { "id": "01JD2WKD40:prompt", "label": "Question 1", "text": "What does welding do?" },
+    { "id": "01JD2WKD40:01JD2WKD41", "label": "Option A", "text": "Fuses materials together" },
+    { "id": "01JD2WKD40:01JD2WKD42", "label": "Option B", "text": "Glues materials together" }
+  ]
+}
+```
+
+- `text` is plain text: all markup stripped, entities decoded, whitespace
+  collapsed. Inline tags (`strong`, `em`, `a`, …) are removed without
+  splitting words; block tags become spaces.
+- `label` is an optional spoken lead-in. Players should speak
+  `"<label>: <text>"` when a label is present, and `text` alone otherwise.
+- `id` is stable and unique within the block, derived from the item's stable
+  ID where one exists, so a player can address or resume a single segment.
+- Blocks with nothing to read return an empty list (`file_link`).
+- When a page has `settings.allow_read_aloud: false`, every block on that
+  page returns `speech: []`. Suppression is enforced server-side, so the
+  text is not merely hidden by the client.
+
+Segments come from each block type's `speakableText()`, which the API calls
+on the **redacted** config only. An `answer_id`, `feedback` string,
+`rubric_html`, or `source_ref` is therefore structurally incapable of
+reaching a speech segment.
+
+What each type reads:
+
+| type | segments |
+| --- | --- |
+| rich_text | the text |
+| callout | the text, with the heading as its label |
+| image / image_labeling | alt text, then long description |
+| video | title, instructions, then focus questions — never the video or its transcript |
+| static_table | caption, then each row linearized as `"<row header>. <column header>: <cell>. <column header>: <cell>."` |
+| vocabulary_cards | term, definition, then analogy, per card |
+| matching | instructions, then all terms, then all descriptions as separate groups |
+| quiz | each question prompt, then `Option A`, `Option B`, … |
+| short_response | the prompt (never the rubric) |
+| cer | the scenario, then each field label |
+| file_link | none |
 
 ## Student responses and grading
 
