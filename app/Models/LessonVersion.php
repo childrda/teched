@@ -29,8 +29,12 @@ class LessonVersion extends Model
 
     protected static function booted(): void
     {
-        // Catch every mutation path (save(), update(), mass update via
-        // model events, delete(), etc.) on existing rows.
+        // Immutability is enforced for all ELOQUENT MODEL paths: update(),
+        // save() on a dirty existing model, and delete() all throw via
+        // these events plus the overrides below. Model events do NOT fire
+        // for query-builder mass updates (LessonVersion::where(...)
+        // ->update(...)) or raw DB writes — those bypass this guard, so
+        // never mutate lesson_versions through the query builder.
         static::updating(function () {
             throw ImmutableLessonVersionException::forOperation('update');
         });
