@@ -231,7 +231,7 @@
       "required": ["url", "label", "description", "opens_in_new_tab"],
       "additionalProperties": false,
       "properties": {
-        "url": { "type": "string", "format": "uri" },
+        "url": { "$ref": "#/$defs/assetUrl" },
         "label": { "type": "string", "minLength": 1 },
         "description": { "$ref": "#/$defs/nullableString" },
         "opens_in_new_tab": { "type": "boolean" }

@@ -156,40 +156,55 @@ test('empty nested stable IDs fail validation', function () {
     expect(fn () => $matching->validateConfig($config))->toThrow(ValidationException::class);
 });
 
-test('image and image_labeling accept absolute https URLs and root-relative paths', function (string $url) {
-    $registry = app(BlockTypeRegistry::class);
+/** Every config field validated by the AssetUrl rule, as [type, field]. */
+function assetUrlFields(): array
+{
+    return [
+        ['image', 'url'],
+        ['image_labeling', 'image_url'],
+        ['file_link', 'url'],
+    ];
+}
 
-    $image = $registry->get('image');
-    $config = $image->defaultConfig();
-    $config['url'] = $url;
-    expect($image->validateConfig($config))->toBeArray();
+test('asset URL fields accept absolute http/https URLs and root-relative paths', function (string $url) {
+    foreach (assetUrlFields() as [$typeKey, $field]) {
+        $type = app(BlockTypeRegistry::class)->get($typeKey);
 
-    $labeling = $registry->get('image_labeling');
-    $config = $labeling->defaultConfig();
-    $config['image_url'] = $url;
-    expect($labeling->validateConfig($config))->toBeArray();
+        $config = $type->defaultConfig();
+        $config[$field] = $url;
+
+        expect($type->validateConfig($config))
+            ->toBeArray("{$typeKey}.{$field} should accept {$url}");
+    }
 })->with([
     'absolute https URL' => ['https://cdn.example.com/diagram.png'],
     'absolute http URL' => ['http://cdn.example.com/diagram.png'],
     'root-relative storage path' => ['/storage/lessons/diagram.png'],
 ]);
 
-test('image and image_labeling reject unsafe or malformed URLs', function (string $url) {
-    $registry = app(BlockTypeRegistry::class);
+test('asset URL fields reject unsafe or malformed URLs', function (string $url) {
+    foreach (assetUrlFields() as [$typeKey, $field]) {
+        $type = app(BlockTypeRegistry::class)->get($typeKey);
 
-    $image = $registry->get('image');
-    $config = $image->defaultConfig();
-    $config['url'] = $url;
-    expect(fn () => $image->validateConfig($config))->toThrow(ValidationException::class);
+        $config = $type->defaultConfig();
+        $config[$field] = $url;
 
-    $labeling = $registry->get('image_labeling');
-    $config = $labeling->defaultConfig();
-    $config['image_url'] = $url;
-    expect(fn () => $labeling->validateConfig($config))->toThrow(ValidationException::class);
+        $rejected = false;
+
+        try {
+            $type->validateConfig($config);
+        } catch (ValidationException) {
+            $rejected = true;
+        }
+
+        expect($rejected)->toBeTrue("{$typeKey}.{$field} should reject {$url}");
+    }
 })->with([
     'javascript scheme' => ['javascript:alert(1)'],
     'data scheme' => ['data:image/png;base64,iVBORw0KGgo='],
     'protocol-relative' => ['//evil.example/diagram.png'],
+    // Browsers normalize a backslash after the leading slash into "//".
+    'backslash protocol-relative' => ['/\\evil.example/diagram.png'],
     'relative without slash' => ['storage/diagram.png'],
 ]);
 

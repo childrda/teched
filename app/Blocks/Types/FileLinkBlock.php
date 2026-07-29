@@ -3,6 +3,7 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Rules\AssetUrl;
 
 class FileLinkBlock extends AbstractBlockType
 {
@@ -29,7 +30,7 @@ class FileLinkBlock extends AbstractBlockType
     public function configRules(): array
     {
         return [
-            'url' => ['required', 'string', 'url:http,https'],
+            'url' => ['required', 'string', new AssetUrl()],
             'label' => ['required', 'string'],
             'description' => ['nullable', 'string'],
             'opens_in_new_tab' => ['required', 'boolean'],

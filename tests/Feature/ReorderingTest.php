@@ -59,6 +59,48 @@ test('reordering blocks within a page succeeds and writes contiguous positions',
         ->and($result->pluck('position')->all())->toBe([1, 2, 3]);
 });
 
+test('reordering pages succeeds when existing positions are 0-based', function () {
+    $lesson = Lesson::factory()->create();
+
+    $pages = collect([0, 1, 2])->map(
+        fn (int $position) => LessonPage::factory()->create([
+            'lesson_id' => $lesson->id,
+            'position' => $position,
+            'title' => "Page {$position}",
+        ])
+    );
+
+    $newOrder = $pages->reverse()->pluck('page_id')->values()->all();
+
+    LessonPage::reorderWithin($lesson, $newOrder);
+
+    $result = $lesson->pages()->get();
+
+    // The helper always normalizes to contiguous 1-based positions.
+    expect($result->pluck('page_id')->all())->toBe($newOrder)
+        ->and($result->pluck('position')->all())->toBe([1, 2, 3]);
+});
+
+test('reordering blocks succeeds when existing positions are 0-based', function () {
+    $page = LessonPage::factory()->create(['position' => 1]);
+
+    $blocks = collect([0, 1, 2])->map(
+        fn (int $position) => LessonBlock::factory()->create([
+            'lesson_page_id' => $page->id,
+            'position' => $position,
+        ])
+    );
+
+    $newOrder = $blocks->reverse()->pluck('block_id')->values()->all();
+
+    LessonBlock::reorderWithin($page, $newOrder);
+
+    $result = $page->blocks()->get();
+
+    expect($result->pluck('block_id')->all())->toBe($newOrder)
+        ->and($result->pluck('position')->all())->toBe([1, 2, 3]);
+});
+
 test('page_id and block_id are unchanged after reordering via the helpers', function () {
     [$lesson, $pages] = makeLessonWithPages(3);
 

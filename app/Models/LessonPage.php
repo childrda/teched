@@ -108,9 +108,11 @@ class LessonPage extends Model
                 );
             }
 
-            // Phase 1: shift everything beyond the current max position so
-            // phase 2 can never collide with a not-yet-moved sibling.
-            $offset = (int) $pages->max('position');
+            // Phase 1: shift everything clear of the 1..n range phase 2
+            // writes into, so phase 2 can never collide with a not-yet-moved
+            // sibling. Clearing max + count + 1 holds whether the existing
+            // positions are 0-based or 1-based.
+            $offset = (int) $pages->max('position') + $pages->count() + 1;
 
             static::query()
                 ->where('lesson_id', $lesson->getKey())
