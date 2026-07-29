@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teched.example/schemas/lesson-manifest.schema.json",
+  "title": "Compiled Lesson Manifest",
+  "description": "The immutable manifest compiled by LessonPublisher and stored on a lesson_versions row. This is the contract the student player builds against (after per-type redaction is applied by the API).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "code",
+    "title",
+    "version",
+    "estimated_minutes",
+    "learning_target",
+    "success_criteria",
+    "pages"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "code": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "estimated_minutes": { "type": ["integer", "null"], "minimum": 0 },
+    "learning_target": { "type": ["string", "null"] },
+    "success_criteria": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/page" }
+    }
+  },
+  "$defs": {
+    "ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "stableId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "page": {
+      "type": "object",
+      "required": [
+        "page_id",
+        "title",
+        "position",
+        "completion_type",
+        "estimated_minutes",
+        "settings",
+        "blocks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "page_id": { "$ref": "#/$defs/ulid" },
+        "title": { "type": "string", "minLength": 1 },
+        "position": { "type": "integer", "minimum": 1 },
+        "completion_type": {
+          "enum": ["view", "submit_required", "complete_activity", "pass_activity", "confirm_video"]
+        },
+        "estimated_minutes": { "type": ["integer", "null"], "minimum": 0 },
+        "settings": { "$ref": "#/$defs/pageSettings" },
+        "blocks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/block" }
+        }
+      }
+    },
+    "pageSettings": {
+      "type": "object",
+      "required": [
+        "minimum_score",
+        "require_all_blocks",
+        "allow_back_navigation",
+        "allow_skip",
+        "show_in_nav"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "minimum_score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "require_all_blocks": { "type": "boolean" },
+        "allow_back_navigation": { "type": "boolean" },
+        "allow_skip": { "type": "boolean" },
+        "show_in_nav": { "type": "boolean" }
+      }
+    },
+    "grading": {
+      "type": ["object", "null"],
+      "required": ["rule"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": { "enum": ["all_correct", "min_score", "completion_only"] },
+        "min_score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "allow_retry": { "type": "boolean" },
+        "max_attempts": { "type": ["integer", "null"], "minimum": 1 },
+        "show_feedback": { "type": "boolean" },
+        "record_first_attempt": { "type": "boolean" },
+        "points": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": ["block_id", "type", "config", "grading"],
+      "additionalProperties": false,
+      "properties": {
+        "block_id": { "$ref": "#/$defs/ulid" },
+        "type": {
+          "enum": [
+            "rich_text", "image", "video", "file_link", "callout", "static_table",
+            "vocabulary_cards", "matching", "image_labeling", "short_response", "cer", "quiz"
+          ]
+        },
+        "config": { "type": "object" },
+        "grading": { "$ref": "#/$defs/grading" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "rich_text" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/richTextConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "image" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/imageConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "video" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/videoConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "file_link" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/fileLinkConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "callout" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/calloutConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "static_table" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/staticTableConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "vocabulary_cards" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/vocabularyCardsConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "matching" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/matchingConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "image_labeling" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/imageLabelingConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "short_response" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/shortResponseConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "cer" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/cerConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "quiz" } } },
+          "then": { "properties": { "config": { "$ref": "#/$defs/quizConfig" } } }
+        }
+      ]
+    },
+    "richTextConfig": {
+      "type": "object",
+      "required": ["html"],
+      "additionalProperties": false,
+      "properties": {
+        "html": { "type": "string" }
+      }
+    },
+    "imageConfig": {
+      "type": "object",
+      "required": ["url", "alt", "caption", "long_description"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "alt": { "type": "string" },
+        "caption": { "$ref": "#/$defs/nullableString" },
+        "long_description": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "videoConfig": {
+      "type": "object",
+      "required": [
+        "provider", "video_id", "title", "instructions", "focus_questions",
+        "require_confirmation", "captions_available", "transcript_html"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "const": "youtube" },
+        "video_id": { "type": "string", "minLength": 1 },
+        "title": { "$ref": "#/$defs/nullableString" },
+        "instructions": { "$ref": "#/$defs/nullableString" },
+        "focus_questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "text": { "type": "string" }
+            }
+          }
+        },
+        "require_confirmation": { "type": "boolean" },
+        "captions_available": { "type": "boolean" },
+        "transcript_html": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "fileLinkConfig": {
+      "type": "object",
+      "required": ["url", "label", "description", "opens_in_new_tab"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "$ref": "#/$defs/nullableString" },
+        "opens_in_new_tab": { "type": "boolean" }
+      }
+    },
+    "calloutConfig": {
+      "type": "object",
+      "required": ["style", "heading", "html"],
+      "additionalProperties": false,
+      "properties": {
+        "style": { "enum": ["info", "warning", "tip"] },
+        "heading": { "$ref": "#/$defs/nullableString" },
+        "html": { "type": "string" }
+      }
+    },
+    "staticTableConfig": {
+      "type": "object",
+      "required": ["caption", "headers", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "caption": { "$ref": "#/$defs/nullableString" },
+        "headers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "vocabularyCardsConfig": {
+      "type": "object",
+      "required": ["terms", "reveal_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "terms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "term", "definition", "analogy"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "term": { "type": "string", "minLength": 1 },
+              "definition": { "type": "string", "minLength": 1 },
+              "analogy": { "$ref": "#/$defs/nullableString" }
+            }
+          }
+        },
+        "reveal_mode": { "enum": ["tap", "always"] }
+      }
+    },
+    "matchingConfig": {
+      "type": "object",
+      "required": ["instructions", "pairs", "shuffle"],
+      "additionalProperties": false,
+      "properties": {
+        "instructions": { "$ref": "#/$defs/nullableString" },
+        "pairs": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "label": { "type": "string", "minLength": 1 },
+              "description": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "shuffle": { "type": "boolean" }
+      }
+    },
+    "imageLabelingConfig": {
+      "type": "object",
+      "required": [
+        "image_url", "image_alt", "long_description", "instructions", "hotspots", "bank"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "image_url": { "type": "string", "format": "uri" },
+        "image_alt": { "type": "string" },
+        "long_description": { "$ref": "#/$defs/nullableString" },
+        "instructions": { "$ref": "#/$defs/nullableString" },
+        "hotspots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "number", "x_pct", "y_pct", "answer_id", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "number": { "type": "integer", "minimum": 1 },
+              "x_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+              "y_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+              "answer_id": { "$ref": "#/$defs/stableId" },
+              "description": { "$ref": "#/$defs/nullableString" }
+            }
+          }
+        },
+        "bank": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "label": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "shortResponseConfig": {
+      "type": "object",
+      "required": ["prompt_html", "placeholder", "min_length", "rubric_html"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt_html": { "type": "string" },
+        "placeholder": { "$ref": "#/$defs/nullableString" },
+        "min_length": { "type": ["integer", "null"], "minimum": 0 },
+        "rubric_html": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "cerConfig": {
+      "type": "object",
+      "required": ["scenario_html", "fields"],
+      "additionalProperties": false,
+      "properties": {
+        "scenario_html": { "type": "string" },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "placeholder", "min_length"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "label": { "type": "string", "minLength": 1 },
+              "placeholder": { "$ref": "#/$defs/nullableString" },
+              "min_length": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "quizConfig": {
+      "type": "object",
+      "required": ["questions", "shuffle_questions"],
+      "additionalProperties": false,
+      "properties": {
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "prompt", "options", "answer_id", "feedback", "source_ref"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "prompt": { "type": "string", "minLength": 1 },
+              "options": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                  "type": "object",
+                  "required": ["id", "text"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "$ref": "#/$defs/stableId" },
+                    "text": { "type": "string", "minLength": 1 }
+                  }
+                }
+              },
+              "answer_id": { "$ref": "#/$defs/stableId" },
+              "feedback": { "$ref": "#/$defs/nullableString" },
+              "source_ref": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["page", "excerpt"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "page": { "type": "string" },
+                      "excerpt": { "type": "string" }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "shuffle_questions": { "type": "boolean" }
+      }
+    }
+  }
+}
