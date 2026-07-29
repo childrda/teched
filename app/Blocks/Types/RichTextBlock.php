@@ -56,9 +56,9 @@ class RichTextBlock extends AbstractBlockType
     }
 
     /**
-     * One segment per top-level element, matching the data-speech-id
-     * attributes RichTextSegmenter renders, so the player can highlight
-     * each segment in place as it is spoken.
+     * One segment per top-level element, and one per item within a list,
+     * matching the data-speech-id attributes RichTextSegmenter renders so the
+     * player can highlight each segment in place as it is spoken.
      */
     public function speakableText(array $redactedConfig): array
     {

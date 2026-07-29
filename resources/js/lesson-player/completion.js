@@ -10,9 +10,17 @@
  *   {
  *     id: string,          // derived from a block_id, never a DOM index
  *     category: string,    // one of CONTRIBUTOR_CATEGORIES
- *     isSatisfied(): boolean,
+ *     isSatisfied(): boolean,  // the student has finished this
+ *     isPassed?(): boolean,    // ...and met the bar; see below
  *     message: string,     // shown when this is what is holding the page
  *   }
+ *
+ * Finishing and passing are separate questions. isSatisfied() answers "has
+ * the student done this?"; isPassed() answers "did they meet the bar?" A
+ * submitted quiz scoring 40% is satisfied but not passed, and a page may
+ * legitimately require either one. Phase 2B's activity blocks must therefore
+ * implement BOTH: without isPassed(), a gradable contributor falls back to
+ * isSatisfied() and a pass_activity page would let a failing score through.
  *
  * Content blocks register nothing by default: a page of prose, images, and
  * tables is complete as soon as it is shown. A video registers a single
@@ -32,10 +40,9 @@ export const CONTRIBUTOR_CATEGORIES = Object.freeze([
  * A rule with no relevant contributors is satisfied, which is why `view`
  * needs no categories and why an unknown rule cannot trap a student.
  *
- * `pass_activity` weighs gradable contributors only. A gradable contributor
- * reports its pass state through isSatisfied(), the one predicate the
- * contract exposes; what passing means for each activity belongs to the
- * activity blocks in Phase 2B.
+ * `pass_activity` weighs gradable contributors only, and is the one rule that
+ * asks them isPassed() rather than isSatisfied(). What passing means for a
+ * given activity belongs to the activity blocks in Phase 2B.
  */
 export const RULE_CATEGORIES = Object.freeze({
   view: [],
@@ -92,6 +99,12 @@ export function createCompletionRegistry() {
     if (typeof contributor.isSatisfied !== 'function') {
       throw new TypeError(`Contributor "${contributor.id}" needs an isSatisfied() function.`);
     }
+
+    // Absent is fine and falls back to isSatisfied(); present but not
+    // callable would fall back silently and quietly pass a failing student.
+    if (contributor.isPassed !== undefined && typeof contributor.isPassed !== 'function') {
+      throw new TypeError(`Contributor "${contributor.id}" has an isPassed that is not a function.`);
+    }
   }
 
   function register(pageId, contributor) {
@@ -131,6 +144,24 @@ export function createCompletionRegistry() {
   }
 
   /**
+   * Whether a contributor clears the bar this rule sets. Only pass_activity
+   * asks a gradable contributor to have been passed; every other rule asks
+   * whether it was finished, so a page that merely requires an attempt is
+   * never blocked by a low score.
+   */
+  function meetsRule(contributor, rule) {
+    if (rule === 'pass_activity' && contributor.category === 'gradable') {
+      // Falling back keeps a 2B activity that has not implemented isPassed()
+      // yet from throwing; it is stricter about nothing, never looser.
+      const predicate = contributor.isPassed ?? contributor.isSatisfied;
+
+      return predicate.call(contributor) === true;
+    }
+
+    return contributor.isSatisfied() === true;
+  }
+
+  /**
    * @param {object} options
    * @param {boolean} options.shown whether the student has been shown the page
    * @returns {{ satisfied: boolean, message: string|null }}
@@ -143,7 +174,7 @@ export function createCompletionRegistry() {
     }
 
     const blocking = relevantContributors(pageId, rule).find(
-      (contributor) => contributor.isSatisfied() !== true,
+      (contributor) => !meetsRule(contributor, rule),
     );
 
     if (blocking === undefined) {

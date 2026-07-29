@@ -10,7 +10,8 @@ use DOMText;
 use DOMXPath;
 
 /**
- * Splits already-sanitized rich text into top-level speech segments.
+ * Splits already-sanitized rich text into speech segments: one per top-level
+ * element, except that a list contributes one segment per item.
  *
  * This class is the single source of truth for that split, so the speech
  * segments a block reports and the data-speech-id attributes rendered into
@@ -117,7 +118,7 @@ class RichTextSegmenter
     }
 
     /**
-     * One candidate per top-level node, skipping anything with no words.
+     * The segments of a fragment, skipping anything with no words.
      *
      * @return list<array{id: string, text: string, node: DOMNode}>
      */
@@ -125,26 +126,53 @@ class RichTextSegmenter
     {
         $segments = [];
 
-        // Snapshot the list: tag() replaces nodes while iterating.
+        // Snapshot the lists: tag() replaces nodes while iterating.
         foreach (iterator_to_array($root->childNodes) as $node) {
-            if (! $node instanceof DOMElement && ! $node instanceof DOMText) {
-                continue;
+            foreach ($this->speakableNodes($node) as $candidate) {
+                if (! $candidate instanceof DOMElement && ! $candidate instanceof DOMText) {
+                    continue;
+                }
+
+                $text = PlainText::from($document->saveHTML($candidate));
+
+                if ($text === '') {
+                    continue;
+                }
+
+                $segments[] = [
+                    'id' => 'html:' . count($segments),
+                    'text' => $text,
+                    'node' => $candidate,
+                ];
             }
-
-            $text = PlainText::from($document->saveHTML($node));
-
-            if ($text === '') {
-                continue;
-            }
-
-            $segments[] = [
-                'id' => 'html:' . count($segments),
-                'text' => $text,
-                'node' => $node,
-            ];
         }
 
         return $segments;
+    }
+
+    /**
+     * What a top-level node contributes: itself, or its items if it is a list.
+     *
+     * A list is a sequence of separate things rather than one run of prose,
+     * so each item becomes its own segment and is highlighted on its own as
+     * it is read. A nested list is left inside the item that owns it, so it
+     * is spoken as part of that item rather than a second time on its own.
+     *
+     * @return list<DOMNode>
+     */
+    private function speakableNodes(DOMNode $node): array
+    {
+        if (! $this->isList($node)) {
+            return [$node];
+        }
+
+        return array_values(iterator_to_array($node->childNodes));
+    }
+
+    private function isList(DOMNode $node): bool
+    {
+        return $node instanceof DOMElement
+            && in_array(strtolower($node->nodeName), ['ul', 'ol'], true);
     }
 
     private function innerHtml(DOMDocument $document, DOMElement $root): string

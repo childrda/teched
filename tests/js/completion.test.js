@@ -77,6 +77,96 @@ describe('page rules against contributor categories', () => {
     });
 });
 
+describe('finishing an activity versus passing it', () => {
+    function gradable({ satisfied, passed }) {
+        return {
+            id: 'block:quiz',
+            category: 'gradable',
+            isSatisfied: () => satisfied,
+            isPassed: () => passed,
+            message: 'Score at least 80% to continue.',
+        };
+    }
+
+    it('counts a submitted but failing activity as finished, not as passed', () => {
+        const registry = createCompletionRegistry();
+        registry.register(PAGE, gradable({ satisfied: true, passed: false }));
+
+        for (const rule of ['complete_activity', 'submit_required']) {
+            expect(registry.evaluate(PAGE, rule, { shown: true }).satisfied, rule).toBe(true);
+        }
+
+        const result = registry.evaluate(PAGE, 'pass_activity', { shown: true });
+
+        expect(result.satisfied).toBe(false);
+        expect(result.message).toBe('Score at least 80% to continue.');
+    });
+
+    it('blocks every gradable rule when the activity is neither finished nor passed', () => {
+        const registry = createCompletionRegistry();
+        registry.register(PAGE, gradable({ satisfied: false, passed: false }));
+
+        for (const rule of ['complete_activity', 'submit_required', 'pass_activity']) {
+            expect(registry.evaluate(PAGE, rule, { shown: true }).satisfied, rule).toBe(false);
+        }
+    });
+
+    it('lets a finished and passed activity through every rule', () => {
+        const registry = createCompletionRegistry();
+        registry.register(PAGE, gradable({ satisfied: true, passed: true }));
+
+        for (const rule of RULES) {
+            expect(registry.evaluate(PAGE, rule, { shown: true }).satisfied, rule).toBe(true);
+        }
+    });
+
+    it('falls back to isSatisfied when a gradable contributor has no isPassed', () => {
+        const registry = createCompletionRegistry();
+        registry.register(PAGE, contributor('gradable', true));
+
+        expect(registry.evaluate(PAGE, 'pass_activity', { shown: true }).satisfied).toBe(true);
+
+        registry.register(PAGE, contributor('gradable', false));
+
+        expect(registry.evaluate(PAGE, 'pass_activity', { shown: true }).satisfied).toBe(false);
+    });
+
+    it('ignores isPassed outside pass_activity and outside the gradable category', () => {
+        const registry = createCompletionRegistry();
+
+        // Finished but failing: only pass_activity should care.
+        registry.register(PAGE, gradable({ satisfied: true, passed: false }));
+        expect(registry.evaluate(PAGE, 'complete_activity', { shown: true }).satisfied).toBe(true);
+
+        // An unfinished activity contributor is not gradable, so its passing
+        // state is not consulted even under pass_activity.
+        const other = createCompletionRegistry();
+        other.register(PAGE, {
+            id: 'block:sort',
+            category: 'activity',
+            isSatisfied: () => false,
+            isPassed: () => true,
+            message: 'Finish the sort.',
+        });
+
+        expect(other.evaluate(PAGE, 'complete_activity', { shown: true }).satisfied).toBe(false);
+    });
+
+    it('rejects an isPassed that is not callable rather than silently falling back', () => {
+        const registry = createCompletionRegistry();
+
+        expect(() =>
+            registry.register(PAGE, {
+                id: 'block:quiz',
+                category: 'gradable',
+                isSatisfied: () => true,
+                isPassed: true,
+                message: '',
+            }),
+        ).toThrow(/isPassed that is not a function/);
+    });
+});
+
 describe('rules with nothing relevant to weigh', () => {
     it.each(RULES)('%s is satisfied when no contributor is registered', (rule) => {
         const registry = createCompletionRegistry();

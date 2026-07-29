@@ -25,15 +25,59 @@ test('tagging marks one element per speech segment, with ids matching one to one
 
     $segments = richTextSpeech($html);
 
-    // A list counts as one top-level element, so three elements, three segments.
-    expect(array_column($segments, 'id'))->toBe(['html:0', 'html:1', 'html:2'])
+    // Two elements plus two list items, each addressable on its own.
+    expect(array_column($segments, 'id'))->toBe(['html:0', 'html:1', 'html:2', 'html:3'])
         ->and(taggedSpeechIds($html))->toBe(array_column($segments, 'id'));
 
     expect(array_column($segments, 'text'))->toBe([
         'Safety first',
         'Wear a mask.',
-        'Gloves Apron',
+        'Gloves',
+        'Apron',
     ]);
+});
+
+test('a list is read one item at a time', function () {
+    $html = '<ul><li>Gloves</li><li>Apron</li><li>Face shield</li></ul>';
+
+    $segments = richTextSpeech($html);
+
+    expect($segments)->toHaveCount(3)
+        ->and(array_column($segments, 'text'))->toBe(['Gloves', 'Apron', 'Face shield'])
+        ->and(taggedSpeechIds($html))->toBe(['html:0', 'html:1', 'html:2']);
+
+    // The ids land on the items, not on the list that holds them.
+    $tagged = app(RichTextSegmenter::class)->tag($html);
+
+    expect($tagged)->toContain('<li data-speech-id="html:0">Gloves</li>')
+        ->and($tagged)->toContain('<ul>');
+
+    expect(preg_match('/<ul[^>]*data-speech-id/', $tagged))->toBe(0);
+});
+
+test('ordered lists are split the same way as unordered ones', function () {
+    $segments = richTextSpeech('<ol><li>Strike the arc</li><li>Move steadily</li></ol>');
+
+    expect(array_column($segments, 'text'))->toBe(['Strike the arc', 'Move steadily']);
+});
+
+test('a nested list is spoken as part of the item that owns it, not twice', function () {
+    $html = '<ul><li>Protect yourself<ul><li>Gloves</li><li>Apron</li></ul></li><li>Check the work</li></ul>';
+
+    $segments = richTextSpeech($html);
+
+    // The outer items are the segments; the inner list rides along inside the
+    // first one rather than being split out or repeated.
+    expect(array_column($segments, 'text'))->toBe([
+        'Protect yourself Gloves Apron',
+        'Check the work',
+    ])->and(taggedSpeechIds($html))->toBe(['html:0', 'html:1']);
+});
+
+test('an empty list contributes no segments', function () {
+    $segments = richTextSpeech('<p>Before</p><ul></ul><ul><li></li></ul><p>After</p>');
+
+    expect(array_column($segments, 'text'))->toBe(['Before', 'After']);
 });
 
 test('each id lands on the element whose words it speaks', function () {

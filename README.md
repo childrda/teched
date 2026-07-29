@@ -80,6 +80,13 @@ The player is an Alpine component in `resources/js/lesson-player/`:
   Content blocks register none, so a page of prose is complete once shown; a
   video with `require_confirmation` registers one. Continue is gated until
   the rule is satisfied and names the first thing still outstanding.
+- **Finishing and passing are different questions.** A contributor answers
+  `isSatisfied()` ("has the student done this?") and, if it is gradable,
+  `isPassed()` ("did they meet the bar?"). Only `pass_activity` asks the
+  second, so a submitted-but-failing quiz completes a `complete_activity`
+  page but not a `pass_activity` one. Phase 2B activities must implement
+  both: without `isPassed()`, a gradable contributor falls back to
+  `isSatisfied()` and a failing score would slip through.
 - **State is in memory only.** No persistence, resume, or attempts (Phase
   3). The sole exception is read-aloud preferences, under
   `lesson_player.speech.rate` and `lesson_player.speech.voice_uri`.

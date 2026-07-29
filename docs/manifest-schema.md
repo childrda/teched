@@ -348,7 +348,7 @@ What each type reads:
 
 | type | segments |
 | --- | --- |
-| rich_text | one segment per top-level element, in document order |
+| rich_text | one segment per top-level element, in document order, except that a `ul`/`ol` yields one segment per `li` (a nested list stays inside its parent item) |
 | callout | the text, with the heading as its label |
 | image / image_labeling | alt text, then long description |
 | video | title, instructions, then focus questions — never the video or its transcript |
