@@ -3,9 +3,14 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Services\HtmlSanitizer;
 
 class CalloutBlock extends AbstractBlockType
 {
+    public function __construct(private readonly HtmlSanitizer $sanitizer)
+    {
+    }
+
     public function key(): string
     {
         return 'callout';
@@ -49,7 +54,7 @@ class CalloutBlock extends AbstractBlockType
         return [
             'style' => $validatedConfig['style'],
             'heading' => $validatedConfig['heading'] ?? null,
-            'html' => $validatedConfig['html'],
+            'html' => $this->sanitizer->sanitize($validatedConfig['html']),
         ];
     }
 }

@@ -3,9 +3,14 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Services\HtmlSanitizer;
 
 class ShortResponseBlock extends AbstractBlockType
 {
+    public function __construct(private readonly HtmlSanitizer $sanitizer)
+    {
+    }
+
     public function key(): string
     {
         return 'short_response';
@@ -49,10 +54,10 @@ class ShortResponseBlock extends AbstractBlockType
     public function compileConfig(array $validatedConfig): array
     {
         return [
-            'prompt_html' => $validatedConfig['prompt_html'],
+            'prompt_html' => $this->sanitizer->sanitize($validatedConfig['prompt_html']),
             'placeholder' => $validatedConfig['placeholder'] ?? null,
             'min_length' => $validatedConfig['min_length'] ?? null,
-            'rubric_html' => $validatedConfig['rubric_html'] ?? null,
+            'rubric_html' => $this->sanitizer->sanitize($validatedConfig['rubric_html'] ?? null),
         ];
     }
 

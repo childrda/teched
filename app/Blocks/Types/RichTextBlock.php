@@ -3,9 +3,14 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Services\HtmlSanitizer;
 
 class RichTextBlock extends AbstractBlockType
 {
+    public function __construct(private readonly HtmlSanitizer $sanitizer)
+    {
+    }
+
     public function key(): string
     {
         return 'rich_text';
@@ -43,7 +48,7 @@ class RichTextBlock extends AbstractBlockType
     public function compileConfig(array $validatedConfig): array
     {
         return [
-            'html' => $validatedConfig['html'],
+            'html' => $this->sanitizer->sanitize($validatedConfig['html']),
         ];
     }
 }

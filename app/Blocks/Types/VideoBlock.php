@@ -3,10 +3,15 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Services\HtmlSanitizer;
 use Illuminate\Validation\Validator;
 
 class VideoBlock extends AbstractBlockType
 {
+    public function __construct(private readonly HtmlSanitizer $sanitizer)
+    {
+    }
+
     public function key(): string
     {
         return 'video';
@@ -75,7 +80,7 @@ class VideoBlock extends AbstractBlockType
             )),
             'require_confirmation' => (bool) $validatedConfig['require_confirmation'],
             'captions_available' => (bool) $validatedConfig['captions_available'],
-            'transcript_html' => $validatedConfig['transcript_html'] ?? null,
+            'transcript_html' => $this->sanitizer->sanitize($validatedConfig['transcript_html'] ?? null),
         ];
     }
 }

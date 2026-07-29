@@ -3,6 +3,7 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Services\HtmlSanitizer;
 use Illuminate\Validation\Validator;
 
 /**
@@ -10,6 +11,10 @@ use Illuminate\Validation\Validator;
  */
 class CerBlock extends AbstractBlockType
 {
+    public function __construct(private readonly HtmlSanitizer $sanitizer)
+    {
+    }
+
     public function key(): string
     {
         return 'cer';
@@ -62,7 +67,7 @@ class CerBlock extends AbstractBlockType
     public function compileConfig(array $validatedConfig): array
     {
         return [
-            'scenario_html' => $validatedConfig['scenario_html'],
+            'scenario_html' => $this->sanitizer->sanitize($validatedConfig['scenario_html']),
             'fields' => array_values(array_map(
                 fn (array $f) => [
                     'id' => $f['id'],
