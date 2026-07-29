@@ -36,6 +36,7 @@ class StaticTableBlock extends AbstractBlockType
             'rows' => ['present', 'array'],
             'rows.*' => ['array'],
             'rows.*.*' => ['present', 'string'],
+            'first_column_is_header' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -61,6 +62,7 @@ class StaticTableBlock extends AbstractBlockType
             'rows' => [
                 ['Cell', 'Cell'],
             ],
+            'first_column_is_header' => false,
         ];
     }
 
@@ -73,6 +75,8 @@ class StaticTableBlock extends AbstractBlockType
                 fn (array $row) => array_values($row),
                 $validatedConfig['rows'] ?? []
             )),
+            // Authors opt in; a plain data grid has column headers only.
+            'first_column_is_header' => (bool) ($validatedConfig['first_column_is_header'] ?? false),
         ];
     }
 

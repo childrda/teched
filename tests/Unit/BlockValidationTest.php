@@ -216,3 +216,28 @@ test('static table rows with the wrong cell count fail validation', function () 
 
     expect(fn () => $table->validateConfig($config))->toThrow(ValidationException::class);
 });
+
+test('static table row headers are opt-in and default to off', function () {
+    $table = app(BlockTypeRegistry::class)->get('static_table');
+
+    $config = $table->defaultConfig();
+    unset($config['first_column_is_header']);
+
+    $compiled = $table->compileConfig($table->validateConfig($config));
+
+    expect($compiled['first_column_is_header'])->toBeFalse();
+
+    $config['first_column_is_header'] = true;
+    $compiled = $table->compileConfig($table->validateConfig($config));
+
+    expect($compiled['first_column_is_header'])->toBeTrue();
+});
+
+test('a non-boolean static table row header flag fails validation', function () {
+    $table = app(BlockTypeRegistry::class)->get('static_table');
+
+    $config = $table->defaultConfig();
+    $config['first_column_is_header'] = 'yes please';
+
+    expect(fn () => $table->validateConfig($config))->toThrow(ValidationException::class);
+});

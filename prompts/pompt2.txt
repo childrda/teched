@@ -1,0 +1,213 @@
+PHASE 2A — LESSON PLAYER: SHELL, CONTENT BLOCKS, NAVIGATION, READ-ALOUD
+
+Scope: the student player for the seven CONTENT block types. The five
+activity blocks come in 2B — do not build them, but design the
+completion registry so they slot in without rework.
+
+=== 0. ASK FIRST ===
+The completion registry is framework-agnostic JavaScript and cannot be
+tested by Pest PHP unit tests. Ask me whether to add Vitest as a dev
+dependency for it. Add no other dependency beyond Alpine without asking.
+
+=== 1. SHARED MANIFEST SERVICE (refactor first) ===
+Extract the redaction + speech logic from LessonManifestController into
+App\Services\StudentManifest::forLesson(Lesson $lesson): ?array
+
+It returns the published manifest with each block config passed through
+its type's redactConfig(), each block given a `speech` array from the
+registered type's EXISTING speakableText() method (empty when the page's
+allow_read_aloud is false), or null when there is no servable version.
+
+Speech is registry-driven: never put block-type-specific speech logic in
+StudentManifest, the controller, or a Blade template. Segment shape is
+already fixed by the contract: { id: string, label: string|null,
+text: string } — plain text, HTML removed, entities decoded, ids unique
+within their block.
+
+Both the API controller and the new player controller MUST call this
+service. Existing API tests must pass unchanged.
+
+=== 2. SCHEMA ADDITION ===
+Add first_column_is_header (bool, default false) to static_table config.
+Update StaticTableBlock rules/defaults/compile, the JSON Schema, and
+docs/manifest-schema.md. Nothing is deployed — re-seed rather than
+writing a migration path, and do not bump schema_version.
+
+=== 3. ROUTES + CONTROLLER ===
+GET /lessons/{code} → LessonPlayerController (web, no auth yet — auth is
+Phase 6). 404 under exactly the API's conditions. Pass the
+StudentManifest array to a Blade view.
+
+Embed it with Blade's @js() directive. Never concatenate JSON into HTML
+and never use {!! json_encode(...) !!}. No client-side fetch.
+
+=== 4. PLAYER SHELL ===
+Install Alpine via the existing Vite setup; Tailwind for styling.
+
+Implement the player as an Alpine component in
+resources/js/lesson-player/player.js, registered through the Vite
+entrypoint. Blade stays declarative — no large inline x-data object.
+
+Layout: header (lesson title, page N of M, progress indicator), main
+(current page's blocks in order), footer (Back / Continue). One page
+visible at a time; page changes are client-side.
+
+State is IN-MEMORY ONLY. Build no persistence, resume, attempts, or POST
+endpoints — that is Phase 3. localStorage is permitted ONLY for
+read-aloud preferences, under namespaced keys:
+  lesson_player.speech.rate
+  lesson_player.speech.voice_uri
+Never store lesson, page, response, completion, or navigation state.
+
+Design: institutional and neutral, not themed to any lesson subject.
+High contrast, generous touch targets, readable at a comfortable
+measure, works on a 1366x768 Chromebook. No decorative motion.
+
+=== 5. RENDERER RESOLUTION ===
+Convention-based, not a @switch: resolve
+resources/views/lesson-player/blocks/{type}.blade.php by the block's
+validated type key. An unresolvable type must log block_id and type and
+render a neutral "This content is currently unavailable" message —
+never internal details to a student.
+
+Renderers:
+- rich_text: render the already-sanitized HTML; do not re-escape it
+- image: <figure> + <img alt> + <figcaption>; long_description in a
+  visible <details> labeled "Image description" (not sr-only)
+- video: responsive 16:9 youtube-nocookie embed with a title attribute,
+  instructions, focus_questions as a list, transcript in <details> when
+  present; if require_confirmation, a labeled checkbox feeding section 6
+- file_link: labeled link + description; if opens_in_new_tab, add
+  rel="noopener noreferrer" and an accessible new-tab indication
+- callout: styled by `style`, conveyed by icon AND text label, never
+  color alone
+- static_table: real <table> with <caption> and <th scope="col">; when
+  first_column_is_header, the first cell of each row is <th scope="row">.
+  A stacked narrow-viewport form must repeat the column header per cell
+- vocabulary_cards: term + definition always visible; analogy revealed by
+  a real <button> with aria-expanded when reveal_mode is "tap"
+
+Empty and partial states: a page with zero blocks still renders its
+title and navigation; missing optional fields must never 500.
+
+=== 6. COMPLETION REGISTRY ===
+Implement as a framework-agnostic JS module
+(resources/js/lesson-player/completion.js) consumed by Alpine. No switch
+over block types; no duplicate PHP evaluator.
+
+A renderer may register zero or more contributors:
+  { id: string,            // derived from block_id, never DOM index
+    category: "confirmation" | "response" | "activity" | "gradable",
+    isSatisfied(): boolean,
+    message: string }
+
+Content blocks register NO contributor by default. A video with
+require_confirmation=true registers one "confirmation" contributor; a
+video without it registers none.
+
+Page rules:
+- view: satisfied once the page is shown
+- confirm_video: all confirmation contributors satisfied
+- submit_required: all response, activity, and gradable contributors
+- complete_activity: all activity and gradable contributors
+- pass_activity: all gradable contributors report passed
+- a rule with no relevant contributors is satisfied
+
+Preserve settings.require_all_blocks in the manifest but evaluate ALL
+relevant contributors in 2A. Do not invent partial-completion or
+optional-activity semantics before 2B.
+
+Continue is disabled until satisfied, showing the first unsatisfied
+contributor's message, announced via aria-live — never color alone.
+Back is hidden when allow_back_navigation is false. A separate Skip
+button appears only when allow_skip is true; skipping advances without
+marking anything satisfied.
+
+The Results page renders as authored content only. Dynamic scores,
+responses, and summaries wait for Phase 3.
+
+=== 7. READ-ALOUD ===
+SpeechSynthesis only — no cloud TTS, no audio files.
+
+- A read-aloud button on each block with a non-empty speech array; no
+  button at all when empty, never a disabled one
+- Speak segments in order; speak `label` first when present
+- Controls while speaking: pause/resume, stop; a rate control (0.5x–2x)
+  and voice picker in a small settings popover
+- Voices load asynchronously: populate from getVoices() AND handle the
+  voiceschanged event. Store the choice by voiceURI, never array index.
+  If a saved voice is unavailable, fall back to the default silently
+- Cancel any queued speech before starting a new block
+- Stop speech on page navigation, component teardown, document
+  visibilitychange to hidden, and beforeunload
+- Never autoplay. If speechSynthesis is unavailable, render no buttons
+
+HIGHLIGHTING — segment level, in place:
+Each renderer emits data-speech-id="{segment id}" on the element
+corresponding to each speech segment. For rich_text, parse the sanitized
+HTML SERVER-SIDE (DOMDocument) to tag each top-level element, and have
+speakableText() emit one segment per top-level element so the two line
+up deterministically.
+
+The client highlights by toggling a class on the element matching the
+active segment, and sets aria-current="true" on it.
+
+DO NOT split text nodes, mutate the sanitized content DOM, map character
+offsets into rendered HTML, or render a separate transcript panel.
+Sentence-level highlighting within a segment is explicitly out of scope.
+The highlight must meet contrast requirements and must not be the only
+indicator of the active segment.
+
+=== 8. ACCESSIBILITY — ACCEPTANCE CRITERIA ===
+- Fully keyboard operable; logical tab order
+- Visible focus indicators; never remove an outline without a stronger
+  replacement
+- On page change, focus the new page heading (tabindex="-1", for
+  programmatic focus only — not in the tab order), with preventScroll
+  where supported, then scroll the container to top; announce the change
+  via aria-live
+- Semantic landmarks: header/main/footer/nav; one h1 per view
+- Text contrast >= 4.5:1; UI components >= 3:1
+- Respect prefers-reduced-motion: no transitions or animation when set
+- Touch targets >= 44x44 CSS px
+- No information conveyed by color alone
+- All controls are real buttons/links with accessible names
+- 200% zoom without horizontal scrolling or clipped content
+
+=== 9. TESTS ===
+Feature (Pest):
+- the player route renders a published lesson and mirrors the API's
+  availability rules exactly (draft, archived, unknown code, missing
+  version row all 404)
+- the view receives EXACTLY the same StudentManifest array the API
+  returns: assertSame() on the decoded API payload vs the view's manifest
+  data. Do not compare raw JSON strings or HTML-embedded bytes
+- the embedded manifest contains no answer_id, feedback, rubric_html, or
+  source_ref (assert recursively over the decoded data)
+- allow_read_aloud=false yields empty speech arrays
+- every content block type resolves to an existing partial
+- a block with missing optional fields does not 500
+- a page with zero blocks renders title and navigation
+
+Unit (Pest):
+- StudentManifest returns null for every unservable state
+- every registered content type produces valid speech segments
+- speech segments contain only id, label, and text; text is plain
+- speech extraction strips scripts and decodes entities
+- rich_text server-side tagging produces one data-speech-id per
+  top-level element, matching its speech segment ids one-to-one
+
+JavaScript (only if Vitest is approved in section 0):
+- the completion registry: each page rule against each contributor
+  category; a rule with no relevant contributors is satisfied; the first
+  unsatisfied contributor's message is the one surfaced
+
+Browser (only if Pest v4 browser testing is already available):
+- keyboard-only navigation through the seeded welding lesson
+- video confirmation toggles Continue correctly
+- the page heading receives focus after navigation
+- read-aloud controls are absent when speechSynthesis is unavailable
+
+=== 10. DO NOT BUILD ===
+Activity blocks, grading, progress persistence, attempts, resume, auth,
+Filament resources, the hotspot editor.

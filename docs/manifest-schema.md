@@ -189,11 +189,17 @@ from `/storage/...`). Protocol-relative (`//`) values and `javascript:`/
   "rows": [
     ["MIG", "Beginners, thin metals"],
     ["TIG", "Precision work"]
-  ]
+  ],
+  "first_column_is_header": true
 }
 ```
 
 Every row has exactly as many cells as there are headers.
+
+`first_column_is_header` (default `false`) marks the first column as a row
+header rather than data. When it is true the player renders each row's first
+cell as `<th scope="row">`, which lets a screen reader announce the row it is
+in; when false every cell in the body is a plain `<td>`.
 
 ### vocabulary_cards
 
@@ -342,7 +348,7 @@ What each type reads:
 
 | type | segments |
 | --- | --- |
-| rich_text | the text |
+| rich_text | one segment per top-level element, in document order |
 | callout | the text, with the heading as its label |
 | image / image_labeling | alt text, then long description |
 | video | title, instructions, then focus questions — never the video or its transcript |

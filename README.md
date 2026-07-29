@@ -24,17 +24,20 @@ publish() ──compiles──▶ LessonVersion (immutable manifest JSON)
   untouched.
 - **Published versions are immutable.** Updating or deleting a
   `LessonVersion` model throws. Republishing creates the next version.
-- **Students never see authoring rows.** `GET /api/lessons/{code}` serves
-  the current published manifest with answers, feedback, rubrics, and
-  source references redacted. Drafts and archived lessons 404.
+- **Students never see authoring rows.** `App\Services\StudentManifest`
+  builds the one payload students receive: the current published manifest
+  with answers, feedback, rubrics, and source references redacted, plus
+  read-aloud speech per block. Both `GET /api/lessons/{code}` (JSON) and
+  `GET /lessons/{code}` (the player) call it, so they cannot drift. Drafts
+  and archived lessons 404 on both.
 - **Stable IDs.** Pages, blocks, and every nested item a student response
   can reference (questions, options, terms, pairs, hotspots, bank items,
   CER fields) carry stable ULID string IDs. Reordering never changes them —
   use `LessonPage::reorderWithin()` / `LessonBlock::reorderWithin()`.
-- **Read-aloud is derived, not stored.** The API adds plain-text speech
-  segments to each block from its type's `speakableText()`, computed from
-  the redacted config so answers can never be spoken. Teachers can switch
-  it off per page via `settings.allow_read_aloud`.
+- **Read-aloud is derived, not stored.** Each block gets plain-text speech
+  segments from its type's `speakableText()`, computed from the redacted
+  config so answers can never be spoken. Teachers can switch it off per
+  page via `settings.allow_read_aloud`.
 
 The manifest contract lives in
 [`docs/schemas/lesson-manifest.schema.json`](docs/schemas/lesson-manifest.schema.json)
@@ -52,13 +55,53 @@ Twelve block types are registered in `App\Providers\BlockTypeServiceProvider`:
 Pages own progression and completion rules; blocks own content. Navigation,
 progress, and results display are platform UI, never authored blocks.
 
+## Student player
+
+`GET /lessons/{code}` renders the player: one lesson page at a time, with a
+header (title, page N of M, progress), the page's blocks, and Back /
+Continue / Skip. The whole manifest is embedded once with Blade's `@js()`
+and navigation happens client-side, so there is no client-side fetch.
+
+The player is an Alpine component in `resources/js/lesson-player/`:
+
+| File | Responsibility |
+| --- | --- |
+| `player.js` | the Alpine component: navigation, focus, gating, read-aloud wiring |
+| `completion.js` | framework-agnostic page-completion registry and rules |
+| `speech.js` | SpeechSynthesis controller, voice/rate preferences |
+
+- **Renderers resolve by convention.** A block of type `static_table` is
+  drawn by `resources/views/lesson-player/blocks/static_table.blade.php`.
+  There is no switch statement. A type with no partial is logged with its
+  `block_id` and type, and the student sees a neutral placeholder.
+- **Completion is contributed, not hard-coded.** A renderer may register
+  contributors (`confirmation`, `response`, `activity`, `gradable`) with the
+  registry; the page's `completion_type` decides which categories it weighs.
+  Content blocks register none, so a page of prose is complete once shown; a
+  video with `require_confirmation` registers one. Continue is gated until
+  the rule is satisfied and names the first thing still outstanding.
+- **State is in memory only.** No persistence, resume, or attempts (Phase
+  3). The sole exception is read-aloud preferences, under
+  `lesson_player.speech.rate` and `lesson_player.speech.voice_uri`.
+- **Read-aloud highlights in place.** Each renderer marks the element for
+  each speech segment with `data-speech-id`; the player toggles a class and
+  `aria-current` on the segment being spoken. For `rich_text`,
+  `App\Services\RichTextSegmenter` both tags the sanitized HTML server-side
+  and produces the segments, so the two always line up one to one.
+
+Phase 2A renders the seven content block types. The five activity types
+resolve to the neutral placeholder until Phase 2B.
+
 ## Local setup
 
 Requirements: PHP 8.2+, Composer, MySQL/MariaDB (developed against XAMPP
 MariaDB 10.4).
 
+Also required for the player: Node 20+ and npm.
+
 ```bash
 composer install
+npm install
 cp .env.example .env
 php artisan key:generate
 ```
@@ -70,10 +113,11 @@ the `DB_*` variables in `.env`. The test connection is configured in
 ```bash
 php artisan migrate
 php artisan db:seed        # builds + publishes WEL-6.1.1 "What Is Welding?"
+npm run build              # or: npm run dev
 ```
 
-Verify: `GET /api/lessons/WEL-6.1.1` returns the published, redacted
-manifest.
+Verify: `/api/lessons/WEL-6.1.1` returns the published, redacted manifest,
+and `/lessons/WEL-6.1.1` plays that lesson.
 
 Note: `.env.example` documents the production drivers (Redis for
 queue/cache/session, S3 for files). For local development without Redis,
@@ -81,16 +125,24 @@ use `database` for those drivers and `local` for the filesystem.
 
 ## Running tests
 
-Tests are written in [Pest](https://pestphp.com) and run against the
-separate MySQL test database:
+There are two suites: [Pest](https://pestphp.com) for PHP (run against the
+separate MySQL test database) and [Vitest](https://vitest.dev) for the
+player's framework-agnostic JavaScript.
 
 ```bash
-vendor/bin/pest
+php artisan test        # PHP — or: vendor/bin/pest
+npm run test            # JavaScript
+composer test:all       # both, in sequence
 ```
 
-The suite covers the manifest JSON Schema contract, API redaction and 404
-rules, version immutability and atomic publishing, block config
-cross-validation, HTML sanitization policy, and the block type registry.
+The PHP suite covers the manifest JSON Schema contract, redaction and 404
+rules shared by the API and the player, version immutability and atomic
+publishing, block config cross-validation, HTML sanitization policy, the
+block type registry, speech extraction, and the player's rendering.
+
+The JavaScript suite covers the completion registry (every page rule
+against every contributor category) and the player component's navigation
+and Continue gating.
 
 ## Adding a new block type
 
@@ -110,6 +162,10 @@ only a new class plus registration:
 3. Add the key to the `App\Enums\BlockType` enum (and the JSON Schema's
    type enum plus a config definition, to keep the documented contract
    complete).
+4. Add `resources/views/lesson-player/blocks/your_block.blade.php` to render
+   it. Mark the element for each speech segment with
+   `data-speech-id="{segment id}"`, and register a completion contributor
+   from `x-init` if the block must be finished before a student continues.
 
 Block classes own **only their config**. The publisher always constructs
 the `{ block_id, type, config, grading }` wrapper. An unregistered type

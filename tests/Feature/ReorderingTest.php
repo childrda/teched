@@ -3,7 +3,6 @@
 use App\Models\Lesson;
 use App\Models\LessonBlock;
 use App\Models\LessonPage;
-use InvalidArgumentException;
 
 function makeLessonWithPages(int $count): array
 {

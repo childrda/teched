@@ -9,3 +9,131 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+/* The player is driven by Alpine; hide it until Alpine has taken over so
+   students never see every page at once. */
+[x-cloak] {
+    display: none !important;
+}
+
+@layer base {
+    /* A visible focus indicator everywhere, stronger than the browser
+       default it replaces. */
+    :focus-visible {
+        outline: 3px solid #1d4ed8;
+        outline-offset: 2px;
+        border-radius: 2px;
+    }
+
+    /* Page headings take programmatic focus after navigation; they are not
+       in the tab order, so they get no focus ring of their own. */
+    [data-page-heading]:focus {
+        outline: none;
+    }
+
+    [data-page-heading]:focus-visible {
+        outline: 3px solid #1d4ed8;
+        outline-offset: 4px;
+    }
+}
+
+@layer components {
+    .player-btn {
+        @apply inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md border-2 px-4 py-2 text-base font-semibold;
+    }
+
+    .player-btn-primary {
+        @apply border-blue-800 bg-blue-700 text-white hover:bg-blue-800;
+    }
+
+    /* aria-disabled rather than disabled: the control stays focusable so a
+       screen reader user can reach it and hear why it is not yet usable. */
+    .player-btn-primary[aria-disabled='true'] {
+        @apply cursor-not-allowed border-slate-500 bg-slate-200 text-slate-700 hover:bg-slate-200;
+    }
+
+    .player-btn-secondary {
+        @apply border-slate-600 bg-white text-slate-900 hover:bg-slate-100;
+    }
+
+    .player-btn-quiet {
+        @apply border-slate-500 bg-white text-slate-800 hover:bg-slate-100;
+    }
+
+    .player-btn-sm {
+        @apply px-3 py-1.5 text-sm;
+    }
+
+    .player-card {
+        @apply rounded-lg border-2 border-slate-400 bg-white p-4 sm:p-6;
+    }
+
+    .player-field-label {
+        @apply block text-sm font-semibold text-slate-900;
+    }
+
+    /* Author HTML arrives already sanitized; this only gives it rhythm. */
+    .player-prose {
+        @apply text-base/7 text-slate-900;
+    }
+
+    .player-prose :where(h1, h2, h3, h4) {
+        @apply mt-6 mb-2 font-semibold text-slate-900 first:mt-0;
+    }
+
+    .player-prose :where(h2) {
+        @apply text-xl;
+    }
+
+    .player-prose :where(h3) {
+        @apply text-lg;
+    }
+
+    .player-prose :where(p) {
+        @apply my-3 max-w-[68ch];
+    }
+
+    .player-prose :where(ul, ol) {
+        @apply my-3 max-w-[68ch] space-y-1 pl-6;
+    }
+
+    .player-prose :where(ul) {
+        @apply list-disc;
+    }
+
+    .player-prose :where(ol) {
+        @apply list-decimal;
+    }
+
+    .player-prose :where(a) {
+        @apply font-semibold text-blue-800 underline;
+    }
+
+    .player-prose :where(strong) {
+        @apply font-semibold;
+    }
+
+    .player-prose :where(blockquote) {
+        @apply my-3 border-l-4 border-slate-400 pl-4 italic;
+    }
+}
+
+/* Read-aloud highlight. Colour is never the only cue: the active segment
+   also carries a heavier outline and aria-current="true". */
+[data-speech-id].is-speaking {
+    background-color: #fde68a;
+    outline: 2px solid #92400e;
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

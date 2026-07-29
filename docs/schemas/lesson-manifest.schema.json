@@ -249,7 +249,7 @@
     },
     "staticTableConfig": {
       "type": "object",
-      "required": ["caption", "headers", "rows"],
+      "required": ["caption", "headers", "rows", "first_column_is_header"],
       "additionalProperties": false,
       "properties": {
         "caption": { "$ref": "#/$defs/nullableString" },
@@ -264,7 +264,8 @@
             "type": "array",
             "items": { "type": "string" }
           }
-        }
+        },
+        "first_column_is_header": { "type": "boolean" }
       }
     },
     "vocabularyCardsConfig": {

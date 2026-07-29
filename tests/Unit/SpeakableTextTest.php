@@ -22,7 +22,9 @@ test('every registered type returns well-formed plain-text speech segments', fun
         $seenIds = [];
 
         foreach ($segments as $segment) {
-            expect($segment)->toHaveKeys(['id', 'label', 'text']);
+            // Exactly these keys: a segment is speech, not a payload.
+            expect(array_keys($segment))
+                ->toBe(['id', 'label', 'text'], "{$key} segments must carry only id, label, and text");
 
             expect($segment['id'])->toBeString()->not->toBe('');
             expect($segment['text'])->toBeString()->not->toBe('');
@@ -62,9 +64,12 @@ test('markup is stripped and whitespace collapsed without splitting inline words
         'html' => "<h2>Safety   First</h2>\n<p>Wear a <strong>mask</strong>. Use <em>gloves</em>too.</p>",
     ]);
 
-    expect($segments)->toHaveCount(1)
-        ->and($segments[0]['label'])->toBeNull()
-        ->and($segments[0]['text'])->toBe('Safety First Wear a mask. Use glovestoo.');
+    // One segment per top-level element, so the player can highlight each
+    // in place; inline tags stay inside their sentence.
+    expect($segments)->toBe([
+        ['id' => 'html:0', 'label' => null, 'text' => 'Safety First'],
+        ['id' => 'html:1', 'label' => null, 'text' => 'Wear a mask. Use glovestoo.'],
+    ]);
 });
 
 test('HTML entities are decoded for speech', function () {
