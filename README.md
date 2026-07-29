@@ -1,59 +1,112 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# TechEd — Self-Paced CTE Lesson Platform
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel application for authoring and delivering self-paced K-12 CTE
+(Career and Technical Education) lessons. Teachers author lessons as an
+editable tree; publishing compiles that tree into an immutable JSON manifest
+that the student player consumes.
 
-## About Laravel
+## Core model
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```
+Lesson (status, current_version)
+└── LessonPage (page_id, position, completion_type, settings)
+    └── LessonBlock (block_id, type, config, grading)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+publish() ──compiles──▶ LessonVersion (immutable manifest JSON)
+```
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Authoring rows are live and editable.** Editing any page or block flags
+  the lesson as having unpublished changes (it never reverts to draft).
+- **Publishing compiles.** `App\Services\LessonPublisher` validates every
+  block, sanitizes all author HTML, compiles each block config, and stores
+  the whole result as a manifest on a new `lesson_versions` row — inside one
+  transaction with the lesson row locked. A failed publish leaves everything
+  untouched.
+- **Published versions are immutable.** Updating or deleting a
+  `LessonVersion` model throws. Republishing creates the next version.
+- **Students never see authoring rows.** `GET /api/lessons/{code}` serves
+  the current published manifest with answers, feedback, rubrics, and
+  source references redacted. Drafts and archived lessons 404.
+- **Stable IDs.** Pages, blocks, and every nested item a student response
+  can reference (questions, options, terms, pairs, hotspots, bank items,
+  CER fields) carry stable ULID string IDs. Reordering never changes them —
+  use `LessonPage::reorderWithin()` / `LessonBlock::reorderWithin()`.
 
-## Learning Laravel
+The manifest contract lives in
+[`docs/schemas/lesson-manifest.schema.json`](docs/schemas/lesson-manifest.schema.json)
+with a human-readable guide (including student response and grading shapes)
+in [`docs/manifest-schema.md`](docs/manifest-schema.md).
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Block types
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Twelve block types are registered in `App\Providers\BlockTypeServiceProvider`:
 
-## Laravel Sponsors
+| Content | Collects response | Auto-graded |
+| --- | --- | --- |
+| rich_text, image, video, file_link, callout, static_table, vocabulary_cards | short_response, cer | matching, image_labeling, quiz |
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Pages own progression and completion rules; blocks own content. Navigation,
+progress, and results display are platform UI, never authored blocks.
 
-### Premium Partners
+## Local setup
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Requirements: PHP 8.2+, Composer, MySQL/MariaDB (developed against XAMPP
+MariaDB 10.4).
 
-## Contributing
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Create two databases (dev + test), e.g. `teched` and `teched_test`, then set
+the `DB_*` variables in `.env`. The test connection is configured in
+`phpunit.xml` (`teched_test` by default).
 
-## Code of Conduct
+```bash
+php artisan migrate
+php artisan db:seed        # builds + publishes WEL-6.1.1 "What Is Welding?"
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Verify: `GET /api/lessons/WEL-6.1.1` returns the published, redacted
+manifest.
 
-## Security Vulnerabilities
+Note: `.env.example` documents the production drivers (Redis for
+queue/cache/session, S3 for files). For local development without Redis,
+use `database` for those drivers and `local` for the filesystem.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Running tests
 
-## License
+Tests are written in [Pest](https://pestphp.com) and run against the
+separate MySQL test database:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+vendor/bin/pest
+```
+
+The suite covers the manifest JSON Schema contract, API redaction and 404
+rules, version immutability and atomic publishing, block config
+cross-validation, HTML sanitization policy, and the block type registry.
+
+## Adding a new block type
+
+No migration, publisher, API, or manifest-contract changes are needed —
+only a new class plus registration:
+
+1. Create `App\Blocks\Types\YourBlock` extending
+   `App\Blocks\AbstractBlockType` (or implementing
+   `App\Blocks\Contracts\BlockType`). Implement `key()`, `label()`, the
+   capability flags, `configRules()`, `defaultConfig()`, and — as needed —
+   `afterValidation()` for cross-field checks, `compileConfig()`,
+   `redactConfig()` (strip anything answer-revealing), and `grade()` for
+   auto-gradable types.
+2. Add the class to the `BLOCK_TYPES` list in
+   `App\Providers\BlockTypeServiceProvider`.
+3. Add the key to the `App\Enums\BlockType` enum (and the JSON Schema's
+   type enum plus a config definition, to keep the documented contract
+   complete).
+
+Block classes own **only their config**. The publisher always constructs
+the `{ block_id, type, config, grading }` wrapper. An unregistered type
+encountered during publish or read throws a descriptive exception rather
+than being silently skipped.
