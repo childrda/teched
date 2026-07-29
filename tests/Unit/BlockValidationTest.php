@@ -112,10 +112,18 @@ test('duplicate stable IDs within a block fail validation', function (string $ty
             return $config;
         },
     ],
-    'matching pair ids' => [
+    'matching bank ids' => [
         'matching',
         function (array $config) {
-            $config['pairs'][1]['id'] = $config['pairs'][0]['id'];
+            $config['bank'][1]['id'] = $config['bank'][0]['id'];
+
+            return $config;
+        },
+    ],
+    'matching slot ids' => [
+        'matching',
+        function (array $config) {
+            $config['slots'][1]['id'] = $config['slots'][0]['id'];
 
             return $config;
         },
@@ -151,10 +159,27 @@ test('empty nested stable IDs fail validation', function () {
     $matching = app(BlockTypeRegistry::class)->get('matching');
 
     $config = $matching->defaultConfig();
-    $config['pairs'][0]['id'] = '  ';
+    $config['bank'][0]['id'] = '  ';
 
     expect(fn () => $matching->validateConfig($config))->toThrow(ValidationException::class);
 });
+
+/**
+ * A slot that shares an id with the item answering it would publish the
+ * answer key: redaction removes answer_id, but the shared id says the same
+ * thing out loud.
+ */
+test('a placement slot may not share an id with a bank item', function (string $typeKey, string $slotList) {
+    $type = app(BlockTypeRegistry::class)->get($typeKey);
+
+    $config = $type->defaultConfig();
+    $config[$slotList][0]['id'] = $config['bank'][0]['id'];
+
+    expect(fn () => $type->validateConfig($config))->toThrow(ValidationException::class);
+})->with([
+    'matching' => ['matching', 'slots'],
+    'image labeling' => ['image_labeling', 'hotspots'],
+]);
 
 /** Every config field validated by the AssetUrl rule, as [type, field]. */
 function assetUrlFields(): array

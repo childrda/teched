@@ -1,0 +1,831 @@
+# PHASE 2B — PLACEMENT ACTIVITIES: MATCHING + IMAGE LABELING
+
+Implement the two placement-based activity block types:
+
+* `matching`
+* `image_labeling`
+
+Build the shared interaction model beneath both renderers.
+
+Do not implement `short_response`, `cer`, or `quiz`. Those block types and the server-side grading endpoint arrive in Phase 2C.
+
+## Core constraint: no grading
+
+The published student manifest is redacted, so the browser does not receive correct answers or answer mappings.
+
+Pages 5 and 6 use the completion type:
+
+```text
+complete_activity
+```
+
+For these pages, completion means the student has placed an item in every slot. It does not mean the answers are correct.
+
+Do not implement:
+
+* client-side correctness checking
+* scoring
+* answer validation
+* fake pass states
+* submission endpoints
+* persistence
+
+These activities must be fully usable in this phase without grading.
+
+---
+
+# 1. SHARED PLACEMENT STATE MACHINE
+
+Create:
+
+```text
+resources/js/lesson-player/placement.js
+```
+
+This module must be framework-agnostic and contain no Alpine-specific code, DOM references, renderer logic, or correctness knowledge.
+
+Both activity renderers must consume this same state machine.
+
+## State
+
+```js
+{
+    bank: [itemId],
+    placements: {
+        slotId: itemId | null,
+    },
+    selectedItemId: string | null,
+}
+```
+
+The module should be initialized with the complete set of item IDs and slot IDs.
+
+## Required operations
+
+```js
+select(itemId)
+clearSelection()
+place(slotId)
+returnToBank(slotId)
+reset()
+isComplete()
+```
+
+Expose enough read-only state for Alpine to render the bank, placements, and selected item.
+
+## Required behavior
+
+### Selecting an item
+
+```js
+select(itemId)
+```
+
+* Selects an item from the bank.
+* Selecting the currently selected item again deselects it.
+* Selecting another item replaces the previous selection.
+* Selecting an item must never duplicate it.
+* An item currently placed in a slot must not also appear in the bank.
+
+### Placing an item
+
+```js
+place(slotId)
+```
+
+* Does nothing when no item is selected.
+* Places the selected item into the requested slot.
+* If the selected item is already in another slot, move it from that slot.
+* If the destination slot is occupied, return the displaced item to the bank.
+* Remove the newly placed item from the bank.
+* Clear `selectedItemId` after a successful placement.
+
+### Returning an item
+
+```js
+returnToBank(slotId)
+```
+
+* Removes the item from the slot.
+* Returns it to the bank exactly once.
+* Clears the slot.
+* Prevents duplicate bank entries.
+
+### Reset
+
+```js
+reset()
+```
+
+* Returns every item to the bank.
+* Clears every slot.
+* Clears the current selection.
+* Restores the original item set without duplication.
+
+### Completion
+
+```js
+isComplete()
+```
+
+Returns `true` only when every defined slot contains an item.
+
+The number of items and slots may vary by block. Do not hardcode counts.
+
+---
+
+# 2. THREE INPUT MODES, ONE STATE MODEL
+
+Pointer, touch, and keyboard interactions must all call the same placement operations.
+
+None of these input methods may be the only way to complete an activity.
+
+## A. Pointer drag — mouse enhancement only
+
+Support native HTML5 drag events for mouse and pointer users.
+
+Use:
+
+* `draggable`
+* `dragstart`
+* `dragover`
+* `drop`
+* `dragend`
+
+Dragging must use the same `select()` and `place()` logic as click and keyboard input.
+
+Do not maintain separate drag-only state that can become inconsistent with the placement module.
+
+**HTML5 drag events are a mouse-only enhancement.** iOS Safari does not support them and Android support is unreliable. Tap-to-place is the touch path and must be completely sufficient on its own.
+
+Do not add a drag-and-drop polyfill, a pointer-events shim, or any touch-drag library.
+
+## B. Tap or click
+
+Required behavior:
+
+* Tap a bank item to select it.
+* Tap the selected bank item again to deselect it.
+* Tap a slot while holding an item to place it.
+* Tap a filled slot while no item is held to return its item to the bank.
+* Tap a filled slot while holding another item to replace the current item.
+* The displaced item returns to the bank.
+
+## C. Keyboard
+
+Keyboard support is a primary interaction path.
+
+Every bank item and every slot must be a real:
+
+```html
+<button type="button">
+```
+
+Do not simulate buttons using `div`, `span`, `role="button"`, or click handlers on non-interactive elements.
+
+### Held state and ARIA
+
+Express the held state using:
+
+* `aria-pressed="true"` on the held bank item
+* a visible non-color indicator such as an icon, outline, check, or pickup symbol
+* the live region described in section 3
+
+**Do not use `aria-grabbed` or `aria-dropeffect`.** Both were deprecated in ARIA 1.1 and removed in ARIA 1.2, and screen reader support was always poor. `aria-pressed` plus the live region communicates the full state.
+
+### Bank item behavior
+
+When focus is on a bank item:
+
+* `Enter` or `Space` selects the item.
+* Focus remains on that item.
+* Pressing `Enter` or `Space` on the selected item again deselects it.
+* `Escape` cancels the selection.
+* After `Escape`, focus returns to the item that was picked up.
+
+### Slot behavior
+
+When focus is on an empty slot:
+
+* `Enter` or `Space` places the selected item.
+* If no item is selected, do nothing and announce that an item must be selected first.
+
+When focus is on a filled slot:
+
+* If no item is selected, `Enter` or `Space` returns the placed item to the bank.
+* If another item is selected, `Enter` or `Space` places the selected item and returns the displaced item to the bank.
+
+### Focus after placement
+
+After a successful placement:
+
+1. Find the next unfilled slot in manifest order.
+2. Move focus to that slot.
+3. If there are no unfilled slots, keep focus on the slot that was just filled.
+
+**Focus must advance within the layer the student is already using.** A placement made from a visual hotspot advances to the next visual hotspot. A placement made from the image-labeling list layer advances within the list. Never move focus between layers — a student working the hotspots who is suddenly dropped into the list below has lost their place.
+
+This must work for:
+
+* matching rows
+* image hotspot buttons
+* the image-labeling equivalent list layer
+
+### Escape
+
+While an item is selected:
+
+* `Escape` clears the selection.
+* Focus returns to the item that initiated the selection.
+* Announce the cancellation.
+
+Store only the minimum DOM reference needed in the Alpine controller for focus restoration. The placement state machine itself must remain DOM-free.
+
+---
+
+# 3. ARIA-LIVE ANNOUNCEMENTS
+
+Each renderer must contain a polite live region:
+
+```html
+<div
+    class="sr-only"
+    aria-live="polite"
+    aria-atomic="true"
+></div>
+```
+
+Announce every meaningful state change: pick up, place, move, return to bank, cancelled selection, an attempted placement with nothing held, and completion.
+
+## Localization
+
+**All announcement strings must be passed into the controller from Blade using `__()`.** Do not hardcode English text in JavaScript.
+
+Add the strings to `lang/en`. Announcements that include a student-visible label interpolate that label into the translated template, for example:
+
+```php
+'placement.picked_up' => ':label picked up',
+'placement.placed_at' => ':label placed at :slot',
+'placement.returned' => ':label returned to the bank',
+'placement.cancelled' => 'Selection cancelled',
+'placement.select_first' => 'Select an item before choosing a slot',
+'placement.complete' => 'All :count items placed',
+'placement.reset' => 'Activity reset',
+```
+
+Read-aloud exists in part for English-language learners, so the population most likely to need translated announcements is the same one these activities serve. Building this in now costs nothing; retrofitting it later means touching every string.
+
+## Announcement rules
+
+* For matching, identify the slot by its description or row number.
+* For image labeling, identify the slot by its point number.
+* Announce completion **only on the transition from incomplete to complete**, never on subsequent state updates. Repeating "All 7 points placed" on every keystroke is unusable.
+* Derive announcements only from visible, student-safe labels and descriptions. Never announce internal IDs or answer mappings.
+
+## Duplicate labels
+
+If two bank items share the same visible label, accessible names and announcements must remain distinguishable. Include the slot number or row context so a student is never told "Arc placed" twice with no way to tell which placement was meant.
+
+---
+
+# 4. MATCHING RENDERER
+
+Create:
+
+```text
+resources/views/lesson-player/blocks/matching.blade.php
+```
+
+## Instructions
+
+Render `config.instructions` above the activity.
+
+## Item bank
+
+Render each item from `config.pairs[]` using its student-visible `label`.
+
+Each bank item must be a button.
+
+The item ID used internally must remain stable and must not depend on display order.
+
+### Shuffle behavior
+
+When `config.shuffle === true`, shuffle only the bank display order when the component mounts.
+
+Do not shuffle the slot descriptions. The manifest order of the descriptions must remain unchanged.
+
+Shuffle once per mount. Do not reshuffle after every Alpine update. Shuffle before first paint so there is no visible reorder flash.
+
+Add this note where the shuffle happens:
+
+```js
+// TODO Phase 3: seed the shuffle from the attempt so bank order
+// survives a resume. Today a reload reorders the bank.
+```
+
+## Slots
+
+Render one slot row for each pair description in manifest order.
+
+Each row must include:
+
+* the description
+* a real button representing the placement slot
+* a clear empty state
+* the placed item's label when filled
+
+Suggested empty text:
+
+```text
+Place an item
+```
+
+The slot's accessible name must include enough context to identify it.
+
+Example:
+
+```text
+Row 2: Produces the heat needed to melt the metal. Empty.
+```
+
+When filled:
+
+```text
+Row 2: Produces the heat needed to melt the metal. Electrode placed.
+```
+
+Do not expose the correct item-to-description relationship.
+
+---
+
+# 5. IMAGE LABELING RENDERER
+
+Create:
+
+```text
+resources/views/lesson-player/blocks/image_labeling.blade.php
+```
+
+This renderer requires both a visual image layer and an equivalent list layer.
+
+Both layers must operate on the same slot IDs and shared placement state.
+
+## Instructions
+
+Render `config.instructions` above the activity when present.
+
+## Image
+
+Render the configured image inside a relatively positioned container.
+
+The image must:
+
+* fill the available container width
+* preserve its aspect ratio
+* use `config.image_alt` as its `alt` text
+* remain usable at 200% zoom
+* not create horizontal page clipping at 375px width
+
+## Image load failure
+
+If the image fails to load (its `error` event fires), **hide the visual hotspot layer entirely** rather than leaving absolutely positioned markers floating over empty space.
+
+The list layer is already a complete working path, so no error announcement is needed. Log the failure for staff with the block ID and image URL.
+
+## Long description
+
+Render `config.long_description` in a visible:
+
+```html
+<details>
+    <summary>Image description</summary>
+    ...
+</details>
+```
+
+Do not hide the long description visually or from assistive technology.
+
+## Visual hotspot layer
+
+Render each hotspot as an absolutely positioned real button.
+
+Use only percentage positioning:
+
+```css
+left: {x_pct}%;
+top: {y_pct}%;
+transform: translate(-50%, -50%);
+```
+
+Do not convert coordinates to fixed pixels. The coordinate represents the marker's center.
+
+Each hotspot marker must:
+
+* be at least `44px × 44px`
+* remain keyboard focusable
+* show its hotspot number while empty
+* show the placed item label when filled
+* use a shape, icon, border, or other non-color treatment for selected and filled states
+* have an accessible name containing the point number, description, and placement state
+
+Examples:
+
+```text
+Point 1: Vertical tool at the top that carries electricity. Empty.
+```
+
+```text
+Point 1: Vertical tool at the top that carries electricity. Electrode placed.
+```
+
+Long labels must not make a marker unusably wide or cause markers to overlap. Use a compact marker presentation and let the list layer carry the full label.
+
+## Equivalent numbered list layer
+
+Always render a numbered list below the image.
+
+This list is mandatory and must not be hidden from assistive technology.
+
+Render one row for each hotspot in manifest order.
+
+Each row must include:
+
+* hotspot number
+* `config.hotspots[].description`
+* a real placement button
+* the placed label, when present
+* a clear empty state
+
+The list button and visual hotspot button must use the same slot ID and remain synchronized. Actions performed in either layer must immediately update the other.
+
+The list layer is the primary working path for:
+
+* keyboard users
+* screen reader users
+* narrow screens
+* users at high zoom
+* users who cannot use precise pointer placement
+* any session where the image failed to load
+
+Do not hide the list layer on desktop.
+
+---
+
+# 6. SHARED ALPINE CONTROLLER
+
+Create a small Alpine adapter or controller for placement activities:
+
+```text
+resources/js/lesson-player/placement-controller.js
+```
+
+Prefer **one configurable controller used by both Blade renderers** over duplicating the interaction code in two places.
+
+The controller may manage:
+
+* the shared placement state machine
+* display labels
+* live-region announcement text, built from the translated strings passed in from Blade
+* drag event item IDs
+* focus restoration
+* focus movement to the next empty slot within the active layer
+* one-time bank shuffling
+* completion registry integration
+
+The controller must not contain answer keys or correctness logic.
+
+---
+
+# 7. COMPLETION CONTRIBUTORS
+
+Each activity block registers exactly one contributor with the existing Phase 2A completion registry.
+
+## Registry integration
+
+**The Phase 2A completion registry is pull-based.** `evaluate()` is called by the player; there is no subscribe, notify, or change-event hook.
+
+Register the contributor once at mount, with closures that read live placement state, and let the player's existing re-evaluation pick up changes. Do not invent a notification mechanism and do not modify the registry's API.
+
+## The contributor
+
+```js
+{
+    id: `${block_id}:placement`,
+    category: 'gradable',
+    isSatisfied: () => placement.isComplete(),
+    // TODO Phase 2C: replace with the server-graded result.
+    isPassed: () => false,
+    message: 'Place every item to continue.',
+}
+```
+
+Requirements:
+
+* Register once when the component mounts.
+* Do not register separately for the hotspot layer and the list layer.
+* Do not register one contributor per item or slot.
+* Unregister during cleanup using the disposer the registry already returns.
+
+`isPassed()` must return `false` in this phase. Do not fake a passing result.
+
+Pages using `complete_activity` rely only on `isSatisfied()` and must enable Continue when every slot is filled.
+
+## pass_activity guard
+
+A placement contributor on a page whose rule is `pass_activity` can never satisfy that rule while `isPassed()` returns `false`. A student would be trapped with no way forward and no explanation.
+
+The seeded lesson does not hit this, but a teacher authoring a lesson in Phase 4 easily could.
+
+On mount, if the containing page's completion rule is `pass_activity`, emit a `console.warn` naming the block ID and page, and record this limitation in the phase summary. Do not work around it by faking a pass.
+
+---
+
+# 8. READ-ALOUD
+
+Both block types already implement `speakableText()`.
+
+The existing Phase 2A block wrapper should therefore render read-aloud controls with no renderer-specific logic.
+
+Verify that:
+
+* matching receives the existing read-aloud button
+* image labeling receives the existing read-aloud button
+* no renderer manually creates a second read-aloud button
+* no special case is added to the wrapper for these block types
+
+Add tests proving that speech content for these blocks never includes `answer_id`, any bank-to-slot mapping, or any correct-answer identifier.
+
+---
+
+# 9. ACCESSIBILITY REQUIREMENTS
+
+These are acceptance requirements, not polish.
+
+## Keyboard
+
+A student must be able to complete both activities from start to finish using only:
+
+* `Tab`
+* `Shift+Tab`
+* `Enter`
+* `Space`
+* `Escape`
+
+## Focus
+
+Provide a clearly visible focus indicator on:
+
+* bank item buttons
+* matching slot buttons
+* image hotspot buttons
+* equivalent list-layer buttons
+* reset controls, if present
+
+Do not remove browser focus outlines unless replaced with an equally visible alternative.
+
+## Non-color state
+
+Selected, held, placed, and empty states must not be communicated using color alone.
+
+Use one or more of: icon, outline, checkmark, border style, pickup symbol, text label, shape change.
+
+## Touch targets
+
+Every interactive item, slot, and hotspot must have a minimum target size of `44px × 44px`.
+
+## Reduced motion
+
+Respect `@media (prefers-reduced-motion: reduce)`.
+
+Disable drag animations, movement transitions, scaling transitions, and decorative placement animations. Native drag behavior may remain; do not add animated movement.
+
+## Responsive behavior
+
+At `375px` viewport width and at `200%` browser zoom, the page must:
+
+* avoid horizontal clipping
+* avoid overlapping matching rows
+* keep bank items readable
+* preserve usable buttons
+* keep the image inside the viewport
+* provide the equivalent list as a complete working path
+
+Visual hotspot labels may be compact, but the list layer must remain fully readable.
+
+---
+
+# 10. OPTIONAL RESET CONTROL
+
+A visible reset control may be included for each activity.
+
+When activated, it must:
+
+* call `placement.reset()`
+* update both image-labeling layers
+* clear the selected state
+* leave the completion registry to re-evaluate naturally
+* announce the reset using the translated string
+
+The reset control must be a real button. Do not add persistence or confirmation dialogs in this phase.
+
+---
+
+# 11. VITEST TESTS
+
+Test the placement state machine independently from Alpine and the DOM.
+
+## Initialization
+
+* all items begin in the bank
+* every slot begins as `null`
+* no item is selected
+* `isComplete()` begins as `false`
+
+## Selection
+
+* selecting an item sets `selectedItemId`
+* selecting the same item again deselects it
+* selecting a different item replaces the selection
+* selecting a placed item does not duplicate it in the bank or slots
+
+## Placement
+
+* placing puts the selected item into the requested slot
+* placing removes the item from the bank
+* placing clears the selection
+* placing with no selection does nothing
+
+## Moving
+
+* placing an item already in another slot moves it
+* the old slot becomes empty
+* the item appears in only one location
+
+## Displacement
+
+* placing onto an occupied slot returns the previous item to the bank
+* the displaced item appears in the bank exactly once
+* the newly placed item occupies the slot
+
+## Return to bank
+
+* returning a placed item clears the slot
+* the item returns to the bank exactly once
+* returning an empty slot does nothing and does not throw
+
+## Reset
+
+* all items return to the bank
+* all slots become empty
+* selection is cleared
+* no duplicates exist
+
+## Completion
+
+* `isComplete()` remains false while any slot is empty
+* `isComplete()` becomes true when all slots are filled
+* `isComplete()` becomes false again when an item is returned
+
+## Contributor
+
+* `isSatisfied()` is false while any slot is empty
+* `isSatisfied()` is true only after every slot is filled
+* `isPassed()` always returns `false` in Phase 2B
+
+---
+
+# 12. PEST TESTS
+
+## Renderer availability
+
+For the seeded lesson:
+
+* page 5 renders the `matching` partial
+* page 6 renders the `image_labeling` partial
+* neither page displays the unavailable-block fallback
+
+## Redaction
+
+For both rendered block payloads:
+
+* `answer_id` does not appear anywhere
+* no answer mapping appears in HTML attributes
+* no answer mapping appears in embedded JSON
+* no answer mapping appears in Alpine initialization data
+
+Use recursive assertions over the decoded payload rather than checking only visible text.
+
+## Speech
+
+For both block types:
+
+* speech segments exist when read-aloud is enabled
+* no speech segment contains `answer_id`
+* no speech segment contains a bank-to-slot mapping
+* no correct-answer identifier is exposed
+
+## Localization
+
+* every announcement string used by the controller exists in `lang/en`
+* no hardcoded English announcement text remains in the JavaScript
+
+---
+
+# 13. BROWSER TESTS
+
+If Pest v4 browser testing is available in the project, add browser tests. Do not introduce another browser-testing framework solely for this phase.
+
+## Matching keyboard test
+
+Using only keyboard actions:
+
+1. Open the seeded lesson.
+2. Navigate to the matching page.
+3. Select a bank item with `Enter` or `Space`.
+4. Tab to the intended slot.
+5. Place it with `Enter` or `Space`.
+6. Continue until every slot is filled.
+7. Confirm the Continue button becomes enabled.
+
+Do not use pointer clicks to place items in this test.
+
+## Image-labeling list test
+
+1. Navigate to the image-labeling page.
+2. Select each bank item.
+3. Place it using the numbered list buttons.
+4. Confirm the visual hotspot layer updates.
+5. Fill every hotspot.
+6. Confirm Continue becomes enabled.
+
+## Escape test
+
+1. Focus a bank item.
+2. Pick it up using `Enter` or `Space`.
+3. Press `Escape`.
+4. Confirm the selection is cleared.
+5. Confirm focus returns to the original bank item.
+6. Confirm the live region announces the cancellation.
+
+Use student-visible labels and test IDs only where necessary. Do not couple browser tests to internal answer IDs.
+
+---
+
+# 14. IMPLEMENTATION BOUNDARIES
+
+Do not build or modify:
+
+* `short_response`
+* `cer`
+* `quiz`
+* grading, scoring, or answer checking
+* grading APIs or submission endpoints
+* saved attempts, persistence, or resume support
+* authentication or authorization
+* Filament or administrative interfaces
+* the completion registry's API
+
+State remains in browser memory and resets when the page reloads.
+
+Do not expose redacted information to make tests easier.
+
+---
+
+# 15. COMPLETION CHECKLIST
+
+Before considering Phase 2B complete, verify:
+
+* One shared placement state machine powers both renderers.
+* Matching and image labeling use the same operations.
+* Pointer drag works for mouse users; no drag polyfill was added.
+* Tap and click placement works.
+* Full keyboard placement works.
+* `aria-pressed` is used; `aria-grabbed` appears nowhere.
+* Escape cancels selection and restores focus.
+* Focus advances to the next unfilled slot within the active layer.
+* All state changes are announced, and completion is announced only on transition.
+* All announcement strings come from `lang/en` via `__()`.
+* Every item and slot is a real button.
+* Image hotspots remain aligned using percentage coordinates.
+* A failed image load hides the visual layer.
+* The equivalent image-labeling list is always present.
+* The visual and list layers remain synchronized.
+* Continue becomes enabled when every slot is filled.
+* `isPassed()` remains false, and a `pass_activity` page warns.
+* No grading or correctness logic exists.
+* No `answer_id` appears in HTML, JavaScript payloads, or speech.
+* Existing Phase 2A tests still pass.
+* New Vitest and Pest tests pass.
+* Browser tests pass when Pest browser testing is available.
+
+Return a summary of:
+
+1. files created
+2. files modified
+3. placement state-machine design
+4. keyboard and focus behavior
+5. completion-registry integration
+6. redaction and read-aloud verification
+7. localization approach
+8. tests added
+9. test commands run and their results

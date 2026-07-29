@@ -121,6 +121,24 @@ export function lessonPlayer(manifest) {
       this.registryVersion += 1;
     },
 
+    /**
+     * Registration for a renderer that tears itself down: unlike
+     * registerContributor(), this hands the registry's remove handle back.
+     * Call it from somewhere that stores the handle — an x-init expression
+     * that merely evaluates to it would have Alpine call it immediately.
+     */
+    addContributor(pageId, contributor) {
+      const remove = this.completion.register(pageId, contributor);
+
+      this.registryVersion += 1;
+
+      return () => {
+        remove();
+
+        this.registryVersion += 1;
+      };
+    },
+
     goForward() {
       if (this.isLastPage) {
         return;

@@ -6,9 +6,15 @@ use App\Blocks\AbstractBlockType;
 use Illuminate\Validation\Validator;
 
 /**
- * Students match each pair's label to its description. The response maps
- * a slot (pair id) to the chosen pair id; a match is correct when the
- * chosen id equals the slot's own id.
+ * Students match a bank item's label to a slot's description.
+ *
+ * Bank items and slots carry independent IDs, and the correct pairing lives
+ * only in each slot's answer_id, which redaction strips. A student who reads
+ * the published manifest therefore learns every label and every description
+ * but not which belong together. An earlier shape stored one row per pair,
+ * which put each label beside its own answer in what students received.
+ *
+ * The response maps a slot ID to the chosen bank item ID.
  */
 class MatchingBlock extends AbstractBlockType
 {
@@ -36,26 +42,66 @@ class MatchingBlock extends AbstractBlockType
     {
         return [
             'instructions' => ['nullable', 'string'],
-            'pairs' => ['required', 'array', 'min:2'],
-            'pairs.*.id' => ['required', 'string'],
-            'pairs.*.label' => ['required', 'string'],
-            'pairs.*.description' => ['required', 'string'],
+            'bank' => ['required', 'array', 'min:2'],
+            'bank.*.id' => ['required', 'string'],
+            'bank.*.label' => ['required', 'string'],
+            'slots' => ['required', 'array', 'min:2'],
+            'slots.*.id' => ['required', 'string'],
+            'slots.*.description' => ['required', 'string'],
+            'slots.*.answer_id' => ['required', 'string'],
             'shuffle' => ['required', 'boolean'],
         ];
     }
 
     protected function afterValidation(Validator $validator, array $config): void
     {
-        $this->assertDistinctIds($validator, $config['pairs'] ?? [], 'pairs');
+        $bank = is_array($config['bank'] ?? null) ? $config['bank'] : [];
+        $slots = is_array($config['slots'] ?? null) ? $config['slots'] : [];
+
+        $this->assertDistinctIds($validator, $bank, 'bank');
+        $this->assertDistinctIds($validator, $slots, 'slots');
+
+        $bankIds = array_column(array_filter($bank, 'is_array'), 'id');
+
+        foreach ($slots as $index => $slot) {
+            if (! is_array($slot)) {
+                continue;
+            }
+
+            $answerId = $slot['answer_id'] ?? null;
+
+            if ($answerId !== null && ! in_array($answerId, $bankIds, true)) {
+                $validator->errors()->add(
+                    "slots.{$index}.answer_id",
+                    "Slot answer_id \"{$answerId}\" does not reference an item in this block's bank."
+                );
+            }
+
+            // A shared ID would survive redaction and tell a student which
+            // item answers the slot, which is the whole point of redacting
+            // answer_id in the first place.
+            $slotId = $slot['id'] ?? null;
+
+            if (is_string($slotId) && in_array($slotId, $bankIds, true)) {
+                $validator->errors()->add(
+                    "slots.{$index}.id",
+                    "Slot id \"{$slotId}\" is also a bank item id; a shared id would reveal the answer."
+                );
+            }
+        }
     }
 
     public function defaultConfig(): array
     {
         return [
             'instructions' => 'Match each term to its description.',
-            'pairs' => [
-                ['id' => 'pair-1', 'label' => 'Term A', 'description' => 'Description A'],
-                ['id' => 'pair-2', 'label' => 'Term B', 'description' => 'Description B'],
+            'bank' => [
+                ['id' => 'item-1', 'label' => 'Term A'],
+                ['id' => 'item-2', 'label' => 'Term B'],
+            ],
+            'slots' => [
+                ['id' => 'slot-1', 'description' => 'Description A', 'answer_id' => 'item-1'],
+                ['id' => 'slot-2', 'description' => 'Description B', 'answer_id' => 'item-2'],
             ],
             'shuffle' => true,
         ];
@@ -65,63 +111,79 @@ class MatchingBlock extends AbstractBlockType
     {
         return [
             'instructions' => $validatedConfig['instructions'] ?? null,
-            'pairs' => array_values(array_map(
-                fn (array $p) => [
-                    'id' => $p['id'],
-                    'label' => $p['label'],
-                    'description' => $p['description'],
+            'bank' => $this->orderBankByLabel(array_map(
+                fn (array $item) => ['id' => $item['id'], 'label' => $item['label']],
+                $validatedConfig['bank']
+            )),
+            'slots' => array_values(array_map(
+                fn (array $slot) => [
+                    'id' => $slot['id'],
+                    'description' => $slot['description'],
+                    'answer_id' => $slot['answer_id'],
                 ],
-                $validatedConfig['pairs']
+                $validatedConfig['slots']
             )),
             'shuffle' => (bool) $validatedConfig['shuffle'],
         ];
+    }
+
+    public function redactConfig(array $compiledConfig): array
+    {
+        $redacted = $compiledConfig;
+
+        $redacted['slots'] = array_map(function (array $slot) {
+            unset($slot['answer_id']);
+
+            return $slot;
+        }, $redacted['slots']);
+
+        return $redacted;
     }
 
     public function grade(array $compiledConfig, ?array $grading, array $response): ?array
     {
         $matches = $response['matches'] ?? [];
 
-        $details = array_map(function (array $pair) use ($matches) {
-            $chosen = $matches[$pair['id']] ?? null;
+        $details = array_map(function (array $slot) use ($matches) {
+            $chosen = $matches[$slot['id']] ?? null;
 
             return [
-                'item_id' => $pair['id'],
-                'correct' => $chosen === $pair['id'],
+                'item_id' => $slot['id'],
+                'correct' => $chosen === $slot['answer_id'],
                 'feedback' => null,
             ];
-        }, $compiledConfig['pairs']);
+        }, $compiledConfig['slots']);
 
         return $this->buildGradingResult(array_values($details), $grading);
     }
 
     /**
-     * Reads the instructions, then the terms, then the descriptions as
-     * separate groups rather than term-followed-by-its-description.
-     * Segments carry stable ids, so a player that shuffles speaks each
-     * group in the order it actually rendered.
+     * Reads the instructions, then the bank labels, then the slot
+     * descriptions as separate groups rather than label-followed-by-answer.
+     * Segments carry stable ids, so a player that shuffles the bank speaks
+     * each group in the order it actually rendered.
      */
     public function speakableText(array $redactedConfig): array
     {
         $segments = [];
-        $pairs = array_values($redactedConfig['pairs'] ?? []);
 
         $this->pushSegment($segments, 'instructions', 'Instructions', $redactedConfig['instructions'] ?? null);
 
-        foreach ($pairs as $index => $pair) {
+        foreach (array_values($redactedConfig['bank'] ?? []) as $index => $item) {
             $this->pushSegment(
                 $segments,
-                ($pair['id'] ?? $index) . ':label',
+                ($item['id'] ?? $index) . ':label',
                 'Term',
-                $pair['label'] ?? null
+                $item['label'] ?? null
             );
         }
 
-        foreach ($pairs as $index => $pair) {
+        foreach (array_values($redactedConfig['slots'] ?? []) as $index => $slot) {
             $this->pushSegment(
                 $segments,
-                ($pair['id'] ?? $index) . ':description',
+                ($slot['id'] ?? $index) . ':description',
                 'Description',
-                $pair['description'] ?? null
+                $slot['description'] ?? null
             );
         }
 

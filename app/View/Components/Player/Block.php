@@ -35,9 +35,15 @@ class Block extends Component
 
     /**
      * @param array<string, mixed> $block a redacted manifest block
+     * @param string $completionType the owning page's completion rule, which
+     *                               an activity renderer needs to know it can
+     *                               never satisfy (see the placement warning)
      */
-    public function __construct(public array $block, public string $pageId = '')
-    {
+    public function __construct(
+        public array $block,
+        public string $pageId = '',
+        public string $completionType = ''
+    ) {
         $this->blockId = (string) ($block['block_id'] ?? '');
         $this->type = (string) ($block['type'] ?? '');
         $this->config = is_array($block['config'] ?? null) ? $block['config'] : [];

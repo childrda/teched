@@ -323,21 +323,36 @@ class WeldingLessonSeeder extends Seeder
     {
         $page = $this->makePage($lesson, 5, 'Vocabulary Match', PageCompletionType::CompleteActivity, 8);
 
-        $pairs = array_map(
-            fn (array $term) => [
-                'id' => $term['id'],
-                'label' => $term['term'],
-                'description' => $term['definition'],
-            ],
-            $this->vocabulary()
+        $vocabulary = $this->vocabulary();
+
+        // A bank item's id names its own label, which students see anyway.
+        // Slot ids are positional, so nothing about a slot hints at the term
+        // that answers it: the pairing lives only in answer_id, and that is
+        // what redaction removes before the manifest reaches a browser.
+        $itemId = fn (array $term) => str_replace('term-', 'mi-', $term['id']);
+
+        $bank = array_map(
+            fn (array $term) => ['id' => $itemId($term), 'label' => $term['term']],
+            $vocabulary
         );
+
+        $slots = array_values(array_map(
+            fn (int $index, array $term) => [
+                'id' => 'ms-' . ($index + 1),
+                'description' => $term['definition'],
+                'answer_id' => $itemId($term),
+            ],
+            array_keys($vocabulary),
+            $vocabulary
+        ));
 
         $page->blocks()->create([
             'type' => 'matching',
             'position' => 1,
             'config' => [
                 'instructions' => 'Match each welding term to its definition. Drag a term onto its definition, or tap a term and then tap its definition.',
-                'pairs' => $pairs,
+                'bank' => $bank,
+                'slots' => $slots,
                 'shuffle' => true,
             ],
             'grading' => $this->fullGrading('all_correct', null, 10),
@@ -356,62 +371,71 @@ class WeldingLessonSeeder extends Seeder
                 'image_alt' => 'Cross-section diagram of a weld in progress: an electrode above two steel plates, an arc and molten pool at the seam, a filler rod entering from the right, and a finished bead along the completed portion of the joint.',
                 'long_description' => 'The diagram shows two flat steel plates meeting at a seam. A vertical electrode descends from the top center, producing a bright arc just above the plates. Beneath the arc, a glowing orange pool of molten metal sits over the seam. A thin filler rod enters at an angle from the upper right, feeding into the pool. To the left of the pool, the metal has already cooled into a ridged bead that resembles a row of stacked coins.',
                 'instructions' => 'Drag each component name onto its numbered point on the diagram, or tap a name and then tap the point.',
-                // NOTE: coordinates are approximate. Fine-tune them in the
-                // hotspot editor (Phase 5) once the real image is in place.
+                // Coordinates are measured against the current diagram asset
+                // (934x465). They will be finalized visually in the Phase 5
+                // hotspot editor. Arc and weld pool are nearly stacked in the
+                // artwork, so they are offset horizontally to keep their tap
+                // targets from colliding.
+                //
+                // Hotspot ids are positional, matching the point number the
+                // student already sees. Naming them after the component they
+                // expect would pair each hotspot with its own bank item id in
+                // plain sight, which is exactly what stripping answer_id is
+                // meant to prevent.
                 'hotspots' => [
                     [
-                        'id' => 'hs-electrode',
+                        'id' => 'hs-1',
                         'number' => 1,
                         'x_pct' => 48.0,
-                        'y_pct' => 22.0,
+                        'y_pct' => 24.0,
                         'answer_id' => 'bank-electrode',
                         'description' => 'Vertical tool at the top that carries electricity and creates the arc.',
                     ],
                     [
-                        'id' => 'hs-arc',
+                        'id' => 'hs-2',
                         'number' => 2,
-                        'x_pct' => 48.0,
-                        'y_pct' => 46.0,
+                        'x_pct' => 53.0,
+                        'y_pct' => 57.0,
                         'answer_id' => 'bank-arc',
                         'description' => 'Bright glow beneath the electrode tip that generates intense heat.',
                     ],
                     [
-                        'id' => 'hs-filler',
+                        'id' => 'hs-3',
                         'number' => 3,
-                        'x_pct' => 68.0,
-                        'y_pct' => 33.0,
+                        'x_pct' => 64.0,
+                        'y_pct' => 52.0,
                         'answer_id' => 'bank-filler',
                         'description' => 'Angled metal rod fed into the heat that melts to strengthen the connection.',
                     ],
                     [
-                        'id' => 'hs-weld-pool',
+                        'id' => 'hs-4',
                         'number' => 4,
-                        'x_pct' => 52.0,
-                        'y_pct' => 58.0,
+                        'x_pct' => 44.0,
+                        'y_pct' => 69.0,
                         'answer_id' => 'bank-weld-pool',
                         'description' => 'Glowing liquid puddle where base and filler metals fuse.',
                     ],
                     [
-                        'id' => 'hs-weld-bead',
+                        'id' => 'hs-5',
                         'number' => 5,
-                        'x_pct' => 28.0,
-                        'y_pct' => 55.0,
+                        'x_pct' => 30.0,
+                        'y_pct' => 72.0,
                         'answer_id' => 'bank-weld-bead',
                         'description' => 'Cooled ripple seam to the left of the pool joining the plates.',
                     ],
                     [
-                        'id' => 'hs-base-metal',
+                        'id' => 'hs-6',
                         'number' => 6,
-                        'x_pct' => 12.0,
-                        'y_pct' => 62.0,
+                        'x_pct' => 15.0,
+                        'y_pct' => 73.0,
                         'answer_id' => 'bank-base-metal',
                         'description' => 'Flat steel plates being connected.',
                     ],
                     [
-                        'id' => 'hs-joint',
+                        'id' => 'hs-7',
                         'number' => 7,
-                        'x_pct' => 50.0,
-                        'y_pct' => 70.0,
+                        'x_pct' => 48.0,
+                        'y_pct' => 78.0,
                         'answer_id' => 'bank-joint',
                         'description' => 'Seam line under the weld pool where the two plates meet.',
                     ],

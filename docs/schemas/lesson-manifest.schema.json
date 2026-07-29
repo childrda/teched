@@ -293,21 +293,34 @@
     },
     "matchingConfig": {
       "type": "object",
-      "required": ["instructions", "pairs", "shuffle"],
+      "required": ["instructions", "bank", "slots", "shuffle"],
       "additionalProperties": false,
       "properties": {
         "instructions": { "$ref": "#/$defs/nullableString" },
-        "pairs": {
+        "bank": {
           "type": "array",
           "minItems": 2,
           "items": {
             "type": "object",
-            "required": ["id", "label", "description"],
+            "required": ["id", "label"],
             "additionalProperties": false,
             "properties": {
               "id": { "$ref": "#/$defs/stableId" },
-              "label": { "type": "string", "minLength": 1 },
-              "description": { "type": "string", "minLength": 1 }
+              "label": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "slots": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["id", "description", "answer_id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "description": { "type": "string", "minLength": 1 },
+              "answer_id": { "$ref": "#/$defs/stableId" }
             }
           }
         },

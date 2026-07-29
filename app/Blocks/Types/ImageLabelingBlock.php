@@ -77,6 +77,17 @@ class ImageLabelingBlock extends AbstractBlockType
                 );
             }
 
+            // A shared ID would survive redaction and tell a student which
+            // item answers the hotspot.
+            $hotspotId = $hotspot['id'] ?? null;
+
+            if (is_string($hotspotId) && in_array($hotspotId, $bankIds, true)) {
+                $validator->errors()->add(
+                    "hotspots.{$index}.id",
+                    "Hotspot id \"{$hotspotId}\" is also a bank item id; a shared id would reveal the answer."
+                );
+            }
+
             $number = $hotspot['number'] ?? null;
             if ($number !== null) {
                 if (isset($seenNumbers[$number])) {
@@ -131,7 +142,7 @@ class ImageLabelingBlock extends AbstractBlockType
                 ],
                 $validatedConfig['hotspots']
             )),
-            'bank' => array_values(array_map(
+            'bank' => $this->orderBankByLabel(array_map(
                 fn (array $b) => ['id' => $b['id'], 'label' => $b['label']],
                 $validatedConfig['bank']
             )),

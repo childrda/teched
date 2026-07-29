@@ -121,6 +121,28 @@ abstract class AbstractBlockType implements BlockType
     }
 
     /**
+     * Orders a bank of placeable choices by their visible label instead of
+     * keeping the order the author typed them in.
+     *
+     * Authors enter a bank slot-by-slot, so authored order usually is the
+     * answer key, and order survives redaction: a student reading the
+     * manifest could pair the nth item with the nth slot and score full
+     * marks without knowing anything. Labels are student-visible already, so
+     * alphabetical order tells them nothing new. The id breaks ties, since
+     * two items may legitimately share a label.
+     *
+     * @param array<int, array<string, mixed>> $bank
+     * @return list<array<string, mixed>>
+     */
+    protected function orderBankByLabel(array $bank): array
+    {
+        usort($bank, fn (array $a, array $b) => [mb_strtolower((string) ($a['label'] ?? '')), (string) ($a['id'] ?? '')]
+            <=> [mb_strtolower((string) ($b['label'] ?? '')), (string) ($b['id'] ?? '')]);
+
+        return array_values($bank);
+    }
+
+    /**
      * Assembles the standard grading result from per-item detail rows of
      * shape { item_id, correct, feedback }.
      *

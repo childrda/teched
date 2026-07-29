@@ -23,5 +23,6 @@
         'config' => $config,
         'blockId' => $blockId,
         'pageId' => $pageId,
+        'completionType' => $completionType,
     ])
 </div>

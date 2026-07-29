@@ -67,6 +67,79 @@ function assertNoForbiddenKeys(array $data): void
     $walk($data, '$');
 }
 
+/**
+ * Finds the first block of the given type in a manifest, an API payload, or
+ * anything else shaped like a list of pages.
+ *
+ * @param array<int, array<string, mixed>> $pages
+ * @return array<string, mixed>
+ */
+function blockOfType(array $pages, string $type): array
+{
+    foreach ($pages as $page) {
+        foreach ($page['blocks'] ?? [] as $block) {
+            if (($block['type'] ?? null) === $type) {
+                return $block;
+            }
+        }
+    }
+
+    throw new RuntimeException("No {$type} block to inspect.");
+}
+
+/** 'bank-weld-pool' and 'hs-weld-pool' both stem from 'weld-pool'. */
+function idStem(string $id): string
+{
+    $parts = preg_split('/[-_:.]/', mb_strtolower($id));
+
+    return count($parts) > 1 ? implode('-', array_slice($parts, 1)) : $parts[0];
+}
+
+/**
+ * Every placement a student could construct knowing only ids and order,
+ * keyed by the assumption each one exploits. Used to prove that no such
+ * assumption pays off: see tests/Feature/RedactionLeakTest.php.
+ *
+ * @param array<int, array<string, mixed>> $slots
+ * @param array<int, array<string, mixed>> $bank
+ * @return array<string, array<string, ?string>>
+ */
+function placementGuesses(array $slots, array $bank): array
+{
+    $slotIds = array_column($slots, 'id');
+    $itemIds = array_column($bank, 'id');
+
+    $pairBy = function (callable $choose) use ($slotIds) {
+        $matches = [];
+
+        foreach ($slotIds as $index => $slotId) {
+            $matches[$slotId] = $choose($slotId, $index);
+        }
+
+        return $matches;
+    };
+
+    return [
+        'a slot id doubles as its own answer' => $pairBy(
+            fn (string $slotId) => in_array($slotId, $itemIds, true) ? $slotId : null
+        ),
+        'the nth bank item answers the nth slot' => $pairBy(
+            fn (string $slotId, int $index) => $itemIds[$index] ?? null
+        ),
+        'a slot id and an item id share a stem' => $pairBy(
+            function (string $slotId) use ($itemIds) {
+                foreach ($itemIds as $itemId) {
+                    if (idStem($slotId) === idStem($itemId)) {
+                        return $itemId;
+                    }
+                }
+
+                return null;
+            }
+        ),
+    ];
+}
+
 function fullGradingShape(string $rule = 'all_correct', ?int $minScore = null): array
 {
     return [

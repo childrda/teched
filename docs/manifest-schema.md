@@ -13,7 +13,7 @@ Key facts:
 - Every published version is immutable. Editing and republishing creates the
   next version.
 - `page_id`, `block_id`, and every nested item ID (questions, options, terms,
-  pairs, hotspots, bank items, CER fields) are **stable string IDs** (ULIDs at
+  slots, hotspots, bank items, CER fields) are **stable string IDs** (ULIDs at
   creation). Reordering never changes a stable ID; student responses reference
   these IDs.
 - All author-supplied HTML fields (`html`, `transcript_html`, `prompt_html`,
@@ -23,6 +23,13 @@ Key facts:
   config through its type's `redactConfig()`, removing `answer_id`,
   `feedback`, `rubric_html`, and `source_ref` before the payload leaves the
   server. The stored manifest itself (documented here) still contains them.
+- Redaction has to survive more than a missing key name. A placement activity
+  keeps its bank and its slots in separate lists so that no single row pairs a
+  label with its own answer, slot IDs may not double as bank item IDs, and
+  `compileConfig()` orders each bank by label so that authored order — which
+  is usually slot order, and therefore the answer key — cannot be read off
+  positions. `tests/Feature/RedactionLeakTest.php` grades responses
+  reconstructed from redacted configs alone to prove it.
 
 ## Top level
 
@@ -219,12 +226,22 @@ in; when false every cell in the body is a plain `<td>`.
 
 ### matching
 
+Bank items and slots are separate lists with independent IDs. Each slot names
+its answer, and `redactConfig()` drops `answer_id`, so what students receive
+lists the labels and the descriptions without pairing them. A slot ID may not
+also be a bank item ID, and the compiled bank is ordered by label rather than
+by authored order.
+
 ```json
 {
   "instructions": "Match each term to its description.",
-  "pairs": [
-    { "id": "01JD2WHB20", "label": "Flux", "description": "Cleans the metal as you weld" },
-    { "id": "01JD2WHB21", "label": "Slag", "description": "Waste material left on a weld" }
+  "bank": [
+    { "id": "01JD2WHB20", "label": "Flux" },
+    { "id": "01JD2WHB21", "label": "Slag" }
+  ],
+  "slots": [
+    { "id": "01JD2WHB30", "description": "Cleans the metal as you weld", "answer_id": "01JD2WHB20" },
+    { "id": "01JD2WHB31", "description": "Waste material left on a weld", "answer_id": "01JD2WHB21" }
   ],
   "shuffle": true
 }
@@ -354,7 +371,7 @@ What each type reads:
 | video | title, instructions, then focus questions — never the video or its transcript |
 | static_table | caption, then each row linearized as `"<row header>. <column header>: <cell>. <column header>: <cell>."` |
 | vocabulary_cards | term, definition, then analogy, per card |
-| matching | instructions, then all terms, then all descriptions as separate groups |
+| matching | instructions, then all bank labels, then all slot descriptions as separate groups |
 | quiz | each question prompt, then `Option A`, `Option B`, … |
 | short_response | the prompt (never the rubric) |
 | cer | the scenario, then each field label |
@@ -403,16 +420,16 @@ the question's authored feedback (subject to `show_feedback`).
 
 ### matching (auto-graded)
 
-Response shape — keys are slot pair IDs, values are the chosen pair ID or
+Response shape — keys are slot IDs, values are the chosen bank item ID or
 `null` when the slot was left unmatched:
 
 ```json
-{ "matches": { "01JD2WHB20": "01JD2WHB20", "01JD2WHB21": null } }
+{ "matches": { "01JD2WHB30": "01JD2WHB20", "01JD2WHB31": null } }
 ```
 
-Scoring: each pair is one item, correct when the chosen pair ID equals the
-slot's own pair ID. Unmatched slots (`null`) are incorrect. `max_score` =
-number of pairs.
+Scoring: each slot is one item, correct when the chosen bank item ID equals
+the slot's `answer_id`. Unmatched slots (`null`) are incorrect. `max_score` =
+number of slots.
 
 ### image_labeling (auto-graded)
 

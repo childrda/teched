@@ -31,7 +31,7 @@ publish() ──compiles──▶ LessonVersion (immutable manifest JSON)
   `GET /lessons/{code}` (the player) call it, so they cannot drift. Drafts
   and archived lessons 404 on both.
 - **Stable IDs.** Pages, blocks, and every nested item a student response
-  can reference (questions, options, terms, pairs, hotspots, bank items,
+  can reference (questions, options, terms, slots, hotspots, bank items,
   CER fields) carry stable ULID string IDs. Reordering never changes them —
   use `LessonPage::reorderWithin()` / `LessonBlock::reorderWithin()`.
 - **Read-aloud is derived, not stored.** Each block gets plain-text speech
@@ -69,6 +69,8 @@ The player is an Alpine component in `resources/js/lesson-player/`:
 | `player.js` | the Alpine component: navigation, focus, gating, read-aloud wiring |
 | `completion.js` | framework-agnostic page-completion registry and rules |
 | `speech.js` | SpeechSynthesis controller, voice/rate preferences |
+| `placement.js` | framework-agnostic placement state machine (bank, slots, selection) |
+| `placement-controller.js` | the Alpine wrapper: announcements, focus, drag ids, shuffle |
 
 - **Renderers resolve by convention.** A block of type `static_table` is
   drawn by `resources/views/lesson-player/blocks/static_table.blade.php`.
@@ -84,9 +86,11 @@ The player is an Alpine component in `resources/js/lesson-player/`:
   `isSatisfied()` ("has the student done this?") and, if it is gradable,
   `isPassed()` ("did they meet the bar?"). Only `pass_activity` asks the
   second, so a submitted-but-failing quiz completes a `complete_activity`
-  page but not a `pass_activity` one. Phase 2B activities must implement
-  both: without `isPassed()`, a gradable contributor falls back to
-  `isSatisfied()` and a failing score would slip through.
+  page but not a `pass_activity` one. A gradable contributor must implement
+  both: without `isPassed()`, it falls back to `isSatisfied()` and a failing
+  score would slip through. Until grading exists, the placement activities
+  answer `isPassed()` with `false` and warn if a page asks for
+  `pass_activity`, rather than reporting a pass they cannot judge.
 - **State is in memory only.** No persistence, resume, or attempts (Phase
   3). The sole exception is read-aloud preferences, under
   `lesson_player.speech.rate` and `lesson_player.speech.voice_uri`.
@@ -96,8 +100,35 @@ The player is an Alpine component in `resources/js/lesson-player/`:
   `App\Services\RichTextSegmenter` both tags the sanitized HTML server-side
   and produces the segments, so the two always line up one to one.
 
-Phase 2A renders the seven content block types. The five activity types
-resolve to the neutral placeholder until Phase 2B.
+### Placement activities
+
+`matching` and `image_labeling` are both placement problems — items from a
+bank go into slots — so one state machine (`placement.js`) drives both and
+one Alpine controller wraps it. Matching's slots are description rows;
+image labeling's are diagram markers.
+
+- **Three ways in, one model.** Choose-then-choose (tap or click), full
+  keyboard, and mouse drag all call the same operations. Every item and slot
+  is a real `<button>`, so `Enter` and `Space` come from the browser rather
+  than a keydown handler of ours, and `Escape` cancels a selection and
+  returns focus to the item it came from. Selection is `aria-pressed`; nothing
+  uses the deprecated `aria-grabbed`.
+- **Announced, not just shown.** Pick up, place, move, displace, return,
+  cancel, reset, and completion each announce into a polite live region.
+  Strings come from `lang/en/placement.php` and are localized server-side,
+  so the JavaScript holds no English.
+- **Image labeling always has two layers.** The diagram's hotspots are
+  percentage-positioned buttons; beneath it, a numbered list carries the same
+  slot IDs. Either layer updates the other immediately, focus advances within
+  whichever layer is in use, and if the image fails to load the visual layer
+  hides itself while the list remains a complete path.
+- **Finished is not correct.** Completion means every slot is filled. There
+  is no correctness checking here, and the redacted manifest carries no
+  answer mapping for one to use.
+
+Phase 2A renders the seven content block types; Phase 2B adds `matching` and
+`image_labeling`. `short_response`, `cer`, and `quiz` resolve to the neutral
+placeholder until Phase 2C brings server-side grading.
 
 ## Local setup
 
@@ -145,11 +176,14 @@ composer test:all       # both, in sequence
 The PHP suite covers the manifest JSON Schema contract, redaction and 404
 rules shared by the API and the player, version immutability and atomic
 publishing, block config cross-validation, HTML sanitization policy, the
-block type registry, speech extraction, and the player's rendering.
+block type registry, speech extraction, and the player's rendering. It also
+feeds each auto-graded type's redacted config back into `grade()` with a
+response guessed from that config alone, so a leak in the answer key shows up
+as a score above zero rather than as a missing key name.
 
 The JavaScript suite covers the completion registry (every page rule
-against every contributor category) and the player component's navigation
-and Continue gating.
+against every contributor category), the player component's navigation and
+Continue gating, and the placement state machine and its controller.
 
 ## Adding a new block type
 

@@ -110,7 +110,9 @@
 
                 <div class="mt-6 space-y-8">
                     @foreach ($page['blocks'] as $block)
-                        <x-player.block :block="$block" :page-id="$page['page_id']" />
+                        <x-player.block :block="$block"
+                                        :page-id="$page['page_id']"
+                                        :completion-type="$page['completion_type']" />
                     @endforeach
                 </div>
             </section>

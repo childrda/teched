@@ -182,22 +182,28 @@ test('video reads title, instructions, and focus questions but never the transcr
     }
 });
 
-test('matching reads instructions, then all terms, then all descriptions', function () {
+test('matching reads instructions, then all labels, then all descriptions', function () {
     $segments = speechFor('matching', [
         'instructions' => 'Match each term to its description.',
-        'pairs' => [
-            ['id' => 'p1', 'label' => 'Weld', 'description' => 'A fused joint'],
-            ['id' => 'p2', 'label' => 'Filler', 'description' => 'Added metal'],
+        'bank' => [
+            ['id' => 'i1', 'label' => 'Weld'],
+            ['id' => 'i2', 'label' => 'Filler'],
+        ],
+        'slots' => [
+            ['id' => 's1', 'description' => 'A fused joint', 'answer_id' => 'i1'],
+            ['id' => 's2', 'description' => 'Added metal', 'answer_id' => 'i2'],
         ],
         'shuffle' => true,
     ]);
 
+    // Labels are spoken in compiled bank order, which compiling sorts by
+    // label: Filler before Weld, whatever order the author typed.
     expect(array_column($segments, 'id'))->toBe([
         'instructions',
-        'p1:label',
-        'p2:label',
-        'p1:description',
-        'p2:description',
+        'i2:label',
+        'i1:label',
+        's1:description',
+        's2:description',
     ]);
 });
 
