@@ -29,10 +29,11 @@ use Illuminate\Support\Str;
 class WeldingLessonSeeder extends Seeder
 {
     /**
-     * Diagram asset. Export the labeled welding cross-section from the
-     * WEL 6.1.1 slide deck and place it at this path before seeding.
+     * Diagram asset, committed under public/ rather than storage/. Seed
+     * fixtures have to survive a fresh clone, and storage/app/public is both
+     * gitignored and dependent on a storage:link symlink existing.
      */
-    private const DIAGRAM_URL = '/storage/lessons/wel-6-1-1/welding-diagram.png';
+    private const DIAGRAM_URL = '/lessons/wel-6-1-1/welding-diagram.png';
 
     public function run(): void
     {
