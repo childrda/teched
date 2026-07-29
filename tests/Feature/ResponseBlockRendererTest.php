@@ -8,7 +8,10 @@ use App\Models\User;
 use App\Services\LessonPublisher;
 use Database\Seeders\WeldingLessonSeeder;
 
-beforeEach(fn () => $this->withoutVite());
+beforeEach(function () {
+    $this->withoutVite();
+    asStudent();
+});
 
 test('short_response, cer, and quiz each render on the player page', function () {
     $lesson = createLessonWithAllBlockTypes();

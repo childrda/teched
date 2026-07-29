@@ -3,9 +3,11 @@
 use App\Enums\BlockType;
 use App\Enums\LessonStatus;
 use App\Enums\PageCompletionType;
+use App\Enums\UserRole;
 use App\Models\Lesson;
 use App\Models\LessonBlock;
 use App\Models\LessonPage;
+use App\Models\User;
 
 test('LessonStatus casts and round-trips correctly', function (LessonStatus $status) {
     $lesson = Lesson::factory()->create(['status' => $status]);
@@ -49,3 +51,14 @@ test('every BlockType enum case has a registered block type class', function () 
         expect($registry->has($case->value))->toBeTrue("No registered class for enum case {$case->value}");
     }
 });
+
+test('UserRole casts and round-trips correctly', function (UserRole $role) {
+    $user = User::factory()->create();
+    $user->forceFill(['role' => $role])->save();
+
+    $fresh = User::query()->findOrFail($user->id);
+
+    expect($fresh->role)->toBeInstanceOf(UserRole::class)
+        ->and($fresh->role)->toBe($role)
+        ->and($fresh->getRawOriginal('role'))->toBe($role->value);
+})->with(UserRole::cases());

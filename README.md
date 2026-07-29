@@ -126,9 +126,10 @@ image labeling's are diagram markers.
   is no correctness checking here, and the redacted manifest carries no
   answer mapping for one to use.
 
-Phase 2A renders the seven content block types; Phase 2B adds `matching` and
-`image_labeling`. `short_response`, `cer`, and `quiz` resolve to the neutral
-placeholder until Phase 2C brings server-side grading.
+Phase 2A–2C ship the full player (content blocks, placement activities,
+response blocks, and the version-bound grading endpoint). Phase 2D adds
+local session authentication so those routes require a signed-in user.
+Google sign-in arrives in Phase 6 on the same `users` rows via `google_id`.
 
 ## Local setup
 
@@ -150,12 +151,24 @@ the `DB_*` variables in `.env`. The test connection is configured in
 
 ```bash
 php artisan migrate
-php artisan db:seed        # builds + publishes WEL-6.1.1 "What Is Welding?"
+php artisan db:seed        # users + WEL-6.1.1 "What Is Welding?"
 npm run build              # or: npm run dev
 ```
 
-Verify: `/api/lessons/WEL-6.1.1` returns the published, redacted manifest,
-and `/lessons/WEL-6.1.1` plays that lesson.
+Seeded development accounts (password for all three: `password`):
+
+| Email | Role |
+| --- | --- |
+| `teacher@teched.test` | teacher (publishes WEL-6.1.1) |
+| `student1@teched.test` | student |
+| `student2@teched.test` | student |
+
+Sign in at `/login`, then open `/lessons/WEL-6.1.1`. The JSON manifest at
+`/api/lessons/WEL-6.1.1` also requires an authenticated session.
+
+Session lifetime defaults to 60 minutes (see `SESSION_LIFETIME` in
+`.env.example`) for shared Chromebook carts. `SESSION_EXPIRE_ON_CLOSE` stays
+false so a closed lid does not force a re-login before Phase 3 resume exists.
 
 Note: `.env.example` documents the production drivers (Redis for
 queue/cache/session, S3 for files). For local development without Redis,

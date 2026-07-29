@@ -30,67 +30,79 @@
                 <p class="text-sm text-slate-700" x-text="`Page ${currentIndex + 1} of ${totalPages}`"></p>
             </div>
 
-            {{-- No speech controls at all when the browser cannot speak. --}}
-            <template x-if="speech.supported">
-                <div class="relative flex flex-wrap items-center gap-2">
-                    <template x-if="speech.speaking">
-                        <div class="flex items-center gap-2">
-                            <button type="button"
-                                    class="player-btn player-btn-quiet player-btn-sm"
-                                    @click="speech.paused ? resumeReading() : pauseReading()"
-                                    x-text="speech.paused ? 'Resume' : 'Pause'"></button>
-                            <button type="button"
-                                    class="player-btn player-btn-quiet player-btn-sm"
-                                    @click="stopReading()">Stop</button>
-                        </div>
-                    </template>
+            <div class="flex flex-wrap items-center gap-3">
+                {{-- Shared Chromebook carts: an obvious logout matters more
+                     than any session lifetime setting. POST + CSRF, not a link. --}}
+                <div class="flex items-center gap-3">
+                    <p class="text-sm font-semibold text-slate-800">{{ auth()->user()->name }}</p>
+                    <form method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit" class="player-btn player-btn-quiet player-btn-sm">Sign out</button>
+                    </form>
+                </div>
 
-                    <button type="button"
-                            class="player-btn player-btn-quiet player-btn-sm"
-                            id="speech-settings-toggle"
-                            x-ref="settingsToggle"
-                            aria-controls="speech-settings"
-                            :aria-expanded="settingsOpen ? 'true' : 'false'"
-                            @click="settingsOpen = ! settingsOpen">
-                        Read-aloud settings
-                    </button>
+                {{-- No speech controls at all when the browser cannot speak. --}}
+                <template x-if="speech.supported">
+                    <div class="relative flex flex-wrap items-center gap-2">
+                        <template x-if="speech.speaking">
+                            <div class="flex items-center gap-2">
+                                <button type="button"
+                                        class="player-btn player-btn-quiet player-btn-sm"
+                                        @click="speech.paused ? resumeReading() : pauseReading()"
+                                        x-text="speech.paused ? 'Resume' : 'Pause'"></button>
+                                <button type="button"
+                                        class="player-btn player-btn-quiet player-btn-sm"
+                                        @click="stopReading()">Stop</button>
+                            </div>
+                        </template>
 
-                    <div id="speech-settings"
-                         x-show="settingsOpen"
-                         @click.outside="settingsOpen = false"
-                         @keydown.escape="settingsOpen = false; $refs.settingsToggle?.focus()"
-                         role="group"
-                         aria-labelledby="speech-settings-toggle"
-                         class="absolute top-full right-0 z-20 mt-2 w-72 space-y-4 rounded-lg border-2 border-slate-400 bg-white p-4 shadow-lg">
-                        <div>
-                            <label class="player-field-label" for="speech-rate">
-                                Speed <span x-text="`${speech.rate.toFixed(1)}×`"></span>
-                            </label>
-                            <input id="speech-rate"
-                                   type="range"
-                                   min="0.5"
-                                   max="2"
-                                   step="0.1"
-                                   class="mt-2 h-11 w-full"
-                                   x-model.number="speech.rate"
-                                   @input="applyRate()">
-                        </div>
+                        <button type="button"
+                                class="player-btn player-btn-quiet player-btn-sm"
+                                id="speech-settings-toggle"
+                                x-ref="settingsToggle"
+                                aria-controls="speech-settings"
+                                :aria-expanded="settingsOpen ? 'true' : 'false'"
+                                @click="settingsOpen = ! settingsOpen">
+                            Read-aloud settings
+                        </button>
 
-                        <div>
-                            <label class="player-field-label" for="speech-voice">Voice</label>
-                            <select id="speech-voice"
-                                    class="mt-2 min-h-11 w-full rounded-md border-2 border-slate-500 bg-white px-2"
-                                    x-model="speech.voiceUri"
-                                    @change="applyVoice()">
-                                <option value="">Default voice</option>
-                                <template x-for="voice in speech.voices" :key="voice.voiceURI">
-                                    <option :value="voice.voiceURI" x-text="voice.label"></option>
-                                </template>
-                            </select>
+                        <div id="speech-settings"
+                             x-show="settingsOpen"
+                             @click.outside="settingsOpen = false"
+                             @keydown.escape="settingsOpen = false; $refs.settingsToggle?.focus()"
+                             role="group"
+                             aria-labelledby="speech-settings-toggle"
+                             class="absolute top-full right-0 z-20 mt-2 w-72 space-y-4 rounded-lg border-2 border-slate-400 bg-white p-4 shadow-lg">
+                            <div>
+                                <label class="player-field-label" for="speech-rate">
+                                    Speed <span x-text="`${speech.rate.toFixed(1)}×`"></span>
+                                </label>
+                                <input id="speech-rate"
+                                       type="range"
+                                       min="0.5"
+                                       max="2"
+                                       step="0.1"
+                                       class="mt-2 h-11 w-full"
+                                       x-model.number="speech.rate"
+                                       @input="applyRate()">
+                            </div>
+
+                            <div>
+                                <label class="player-field-label" for="speech-voice">Voice</label>
+                                <select id="speech-voice"
+                                        class="mt-2 min-h-11 w-full rounded-md border-2 border-slate-500 bg-white px-2"
+                                        x-model="speech.voiceUri"
+                                        @change="applyVoice()">
+                                    <option value="">Default voice</option>
+                                    <template x-for="voice in speech.voices" :key="voice.voiceURI">
+                                        <option :value="voice.voiceURI" x-text="voice.label"></option>
+                                    </template>
+                                </select>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </template>
+                </template>
+            </div>
         </div>
 
         <div class="h-2 w-full bg-slate-300"

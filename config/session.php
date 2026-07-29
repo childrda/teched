@@ -32,8 +32,12 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // Default 60 for shared classroom devices; override via SESSION_LIFETIME.
+    'lifetime' => (int) env('SESSION_LIFETIME', 60),
 
+    // Kept false on purpose: expire-on-close is better hygiene on a shared
+    // cart, but a closed Chromebook lid would then force a re-login on every
+    // resume, and resume is the feature Phase 3 exists to deliver.
     'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 
     /*

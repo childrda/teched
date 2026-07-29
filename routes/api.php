@@ -3,4 +3,4 @@
 use App\Http\Controllers\Api\LessonManifestController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/lessons/{code}', LessonManifestController::class);
+Route::middleware('auth')->get('/lessons/{code}', LessonManifestController::class);

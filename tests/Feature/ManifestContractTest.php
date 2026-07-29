@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Services\LessonPublisher;
 use Database\Seeders\WeldingLessonSeeder;
 
+beforeEach(fn () => asStudent());
+
 test('published manifest with every block type validates against the JSON schema', function () {
     $lesson = createLessonWithAllBlockTypes();
 

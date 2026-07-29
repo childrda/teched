@@ -13,7 +13,10 @@ use Database\Seeders\WeldingLessonSeeder;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 
-beforeEach(fn () => $this->withoutVite());
+beforeEach(function () {
+    $this->withoutVite();
+    asStudent();
+});
 
 function publishLesson(Lesson $lesson): Lesson
 {

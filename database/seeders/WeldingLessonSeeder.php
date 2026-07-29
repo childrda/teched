@@ -3,12 +3,13 @@
 namespace Database\Seeders;
 
 use App\Enums\PageCompletionType;
+use App\Enums\UserRole;
 use App\Models\Lesson;
 use App\Models\LessonPage;
 use App\Models\User;
 use App\Services\LessonPublisher;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * Builds WEL-6.1.1 "What Is Welding?" as live AUTHORING ROWS (pages and
@@ -37,13 +38,17 @@ class WeldingLessonSeeder extends Seeder
 
     public function run(): void
     {
+        // Prefer the seeded teacher (UserSeeder). When this seeder runs alone
+        // in a test, create that same account rather than an orphan author.
         $author = User::query()->firstOrCreate(
-            ['email' => 'author@teched.test'],
+            ['email' => UserSeeder::TEACHER_EMAIL],
             [
-                'name' => 'Seed Author',
-                'password' => bcrypt(Str::random(32)),
+                'name' => 'Seed Teacher',
+                'password' => Hash::make(UserSeeder::DEV_PASSWORD),
             ]
         );
+
+        $author->forceFill(['role' => UserRole::Teacher])->save();
 
         // Re-seeding replaces the lesson wholesale (DB-level cascade removes
         // pages, blocks, and versions without firing model events).

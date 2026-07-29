@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Services\LessonPublisher;
 use Database\Seeders\WeldingLessonSeeder;
 
+beforeEach(fn () => asStudent());
+
 test('a lesson defaults to allowing read-aloud', function () {
     $lesson = Lesson::query()->create(['code' => 'RA-0.0.1', 'title' => 'Defaults']);
 

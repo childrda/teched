@@ -7,6 +7,7 @@ use Database\Seeders\WeldingLessonSeeder;
 // The player view loads built assets; these tests are about its markup.
 beforeEach(function () {
     $this->withoutVite();
+    asStudent();
     $this->seed(WeldingLessonSeeder::class);
 });
 

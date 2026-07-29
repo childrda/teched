@@ -24,7 +24,10 @@ const CONTENT_BLOCK_TYPES = [
 
 // The player view loads built assets; the tests are about its markup, not
 // about whether someone has run the front-end build.
-beforeEach(fn () => $this->withoutVite());
+beforeEach(function () {
+    $this->withoutVite();
+    asStudent();
+});
 
 function publish(Lesson $lesson): Lesson
 {

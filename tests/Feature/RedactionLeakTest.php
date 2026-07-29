@@ -4,6 +4,8 @@ use App\Blocks\BlockTypeRegistry;
 use App\Models\Lesson;
 use Database\Seeders\WeldingLessonSeeder;
 
+beforeEach(fn () => asStudent());
+
 /**
  * Redaction has to survive more than a search for forbidden key names.
  *

@@ -3,6 +3,7 @@
 use App\Models\Lesson;
 use App\Models\LessonBlock;
 use App\Models\LessonPage;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Validator as JsonSchemaValidator;
@@ -14,6 +15,23 @@ pest()->extend(TestCase::class)
 
 pest()->extend(TestCase::class)
     ->in('Unit');
+
+/**
+ * Authenticate as a student for protected player / API / grading routes.
+ * Role comes from the database default (student) — not mass-assigned.
+ */
+function asStudent(?User $user = null): User
+{
+    $user ??= User::factory()->create();
+
+    // Role comes from the column default and is not fillable, so refresh
+    // before callers assert isStudent() on the returned model.
+    $user->refresh();
+
+    test()->actingAs($user);
+
+    return $user;
+}
 
 /**
  * Validates a decoded manifest array against docs/schemas/lesson-manifest.schema.json.
