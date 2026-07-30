@@ -182,7 +182,7 @@ test('an authenticated user sees logout on home and the lesson player; a guest s
 
     $this->post('/logout')->assertRedirect(route('login'));
 
-    $this->get('/')->assertOk()->assertDontSee('Sign out', false);
+    $this->get('/')->assertRedirect(route('login'));
     $this->get('/login')->assertOk()->assertDontSee('Sign out', false);
 });
 

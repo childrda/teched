@@ -229,6 +229,40 @@ class QuizBlock extends AbstractBlockType
         return $this->buildGradingResult(array_values($details), $grading);
     }
 
+    public function revealItems(array $internalResult, array $compiledConfig, bool $revealAnswers): array
+    {
+        $questionsById = [];
+
+        foreach ($compiledConfig['questions'] ?? [] as $question) {
+            if (is_array($question) && is_string($question['id'] ?? null)) {
+                $questionsById[$question['id']] = $question;
+            }
+        }
+
+        $items = [];
+
+        foreach ($internalResult['details'] ?? [] as $detail) {
+            if (! is_array($detail) || ! is_string($detail['item_id'] ?? null)) {
+                continue;
+            }
+
+            $questionId = $detail['item_id'];
+            $question = $questionsById[$questionId] ?? null;
+
+            $items[] = [
+                'question_id' => $questionId,
+                'correct' => (bool) ($detail['correct'] ?? false),
+                // feedback already respects show_feedback inside buildGradingResult.
+                'feedback' => array_key_exists('feedback', $detail) ? $detail['feedback'] : null,
+                'correct_option_id' => $revealAnswers && is_array($question)
+                    ? ($question['answer_id'] ?? null)
+                    : null,
+            ];
+        }
+
+        return $items;
+    }
+
     /**
      * Reads each question prompt followed by its lettered options. A
      * redacted config carries no answer_id, feedback, or source_ref, so

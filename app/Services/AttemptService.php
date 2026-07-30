@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use App\Blocks\BlockTypeRegistry;
 use App\Enums\AttemptStatus;
+use App\Models\AttemptRetryGrant;
 use App\Models\Lesson;
 use App\Models\LessonAttempt;
 use App\Models\User;
 use App\Support\DatabaseErrors;
+use App\Support\ManifestBlockLookup;
 use App\Support\StudentGradingResult;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -17,19 +20,26 @@ use RuntimeException;
  * Resolves the attempt a student should see for a lesson: resume in-progress,
  * show the latest completed read-only, or create a new one pinned to the
  * currently available version.
+ *
+ * Selection order (existingAttempt):
+ * 1. in_progress — active work, not read-only
+ * 2. most recent completed — genuine read-only review
+ * 3. null — never revive a superseded attempt as the student's view
  */
 class AttemptService
 {
     public function __construct(
         private readonly StudentManifest $studentManifest,
         private readonly StudentGradingResult $studentResults,
+        private readonly RetryPolicy $retries,
+        private readonly BlockTypeRegistry $registry,
+        private readonly ManifestBlockLookup $blocks,
     ) {
     }
 
     /**
      * The attempt that already applies for this user and lesson, with no
-     * creation side effect. In-progress wins; else the most recent completed
-     * (read-only); else null. Shared by the player and the manifest API so
+     * creation side effect. Shared by the player and the manifest API so
      * the two cannot disagree about which pin applies.
      *
      * @return array{attempt: LessonAttempt, read_only: bool}|null
@@ -115,32 +125,98 @@ class AttemptService
     }
 
     /**
+     * Staff-only: supersede the current in_progress (or completed) attempt
+     * and open a fresh one on the currently available version. History on
+     * the old attempt is untouched.
+     */
+    public function restartForStaff(LessonAttempt $attempt, User $actor): LessonAttempt
+    {
+        return DB::transaction(function () use ($attempt, $actor) {
+            /** @var LessonAttempt $locked */
+            $locked = LessonAttempt::query()
+                ->whereKey($attempt->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $locked->loadMissing('lesson');
+
+            if ($locked->status === AttemptStatus::InProgress
+                || $locked->status === AttemptStatus::Completed) {
+                $locked->forceFill([
+                    'status' => AttemptStatus::Superseded,
+                    'completed_at' => null,
+                    'superseded_at' => now(),
+                    'superseded_by_user_id' => $actor->id,
+                ])->save();
+            }
+
+            return $this->createAttempt($locked->user, $locked->lesson);
+        });
+    }
+
+    /**
+     * Staff-only: add attempts for one block. History is untouched.
+     */
+    public function grantRetries(
+        LessonAttempt $attempt,
+        string $blockId,
+        int $additionalAttempts,
+        User $actor,
+        ?string $reason = null,
+    ): AttemptRetryGrant {
+        return AttemptRetryGrant::query()->create([
+            'lesson_attempt_id' => $attempt->id,
+            'block_id' => $blockId,
+            'granted_by_user_id' => $actor->id,
+            'additional_attempts' => max(1, $additionalAttempts),
+            'reason' => $reason,
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
      * Student-facing restore payload embedded beside the manifest.
      *
      * @return array<string, mixed>
      */
     public function restorePayload(LessonAttempt $attempt, bool $readOnly): array
     {
-        $attempt->loadMissing(['blockStates', 'blockSubmissions']);
+        $attempt->loadMissing(['blockStates', 'blockSubmissions', 'lessonVersion']);
 
-        $latestByBlock = $attempt->blockSubmissions
-            ->sortByDesc('attempt_number')
-            ->unique('block_id');
+        $byBlock = $attempt->blockSubmissions
+            ->filter(fn ($row) => is_array($row->grading_result))
+            ->groupBy('block_id');
 
         $submissions = [];
 
-        foreach ($latestByBlock as $submission) {
-            // Only gradable summaries reach the student — five-key ceiling,
-            // never details[]. Response-only snapshots stay server-side.
-            if (! is_array($submission->grading_result)) {
+        foreach ($byBlock as $blockId => $rows) {
+            $ordered = $rows->sortBy('attempt_number')->values();
+            $first = $ordered->first();
+            $latest = $ordered->last();
+
+            $block = $this->blocks->findBlock($attempt->lessonVersion->manifest, (string) $blockId);
+
+            if ($block === null) {
                 continue;
             }
 
-            $public = $this->studentResults->map($submission->grading_result);
+            $type = $this->registry->get($block['type']);
+            $config = is_array($block['config'] ?? null) ? $block['config'] : [];
+            $grading = is_array($block['grading'] ?? null) ? $block['grading'] : null;
 
-            $submissions[$submission->block_id] = array_merge($public, [
-                'attempt_number' => $submission->attempt_number,
-            ]);
+            $latestEnvelope = $this->submissionEnvelope($latest, $type, $config, $grading, $attempt);
+
+            $recordFirst = (bool) ($grading['record_first_attempt'] ?? false);
+            $firstEnvelope = null;
+
+            if ($recordFirst && $first !== null) {
+                $firstEnvelope = $this->submissionEnvelope($first, $type, $config, $grading, $attempt);
+            }
+
+            $submissions[$blockId] = [
+                'first_result' => $firstEnvelope,
+                'latest_result' => $latestEnvelope,
+            ];
         }
 
         return [
@@ -158,6 +234,32 @@ class AttemptService
             ])->values()->all(),
             'submissions' => $submissions,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $compiledConfig
+     * @param  array<string, mixed>|null  $grading
+     * @return array{result: array<string, mixed>, attempts: array{used: int, allowed: int|null, remaining: int|null}}
+     */
+    private function submissionEnvelope(
+        $submission,
+        $type,
+        array $compiledConfig,
+        ?array $grading,
+        LessonAttempt $attempt,
+    ): array {
+        $internal = $submission->grading_result;
+        $reveal = $this->studentResults->revealFromSubmission(
+            $submission,
+            $type,
+            $compiledConfig,
+            $grading
+        );
+
+        return $this->studentResults->envelope(
+            $this->studentResults->mapResult($internal, $reveal),
+            $this->retries->counts($attempt, $submission->block_id, $grading)
+        );
     }
 
     private function createAttempt(User $user, Lesson $lesson): LessonAttempt

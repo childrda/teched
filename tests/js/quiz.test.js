@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isPublicResult, quizActivity } from '../../resources/js/lesson-player/quiz.js';
+import { isGradingEnvelope, isPublicResult, quizActivity } from '../../resources/js/lesson-player/quiz.js';
 
 const QUESTIONS = [
     {
@@ -31,6 +31,8 @@ const STRINGS = {
     score: 'Score: :score of :max (:percentage%)',
     passed: 'Passed',
     failed: 'Not yet passed',
+    no_attempts_remaining: 'No attempts remain. Ask your teacher to grant more so you can try again.',
+    submit_unavailable: 'Submit is unavailable — no attempts remain. Ask your teacher to grant more.',
     error: 'Something went wrong checking your answers. Please try again.',
 };
 
@@ -41,7 +43,20 @@ function publicResult(overrides = {}) {
         percentage: 50,
         passed: false,
         requires_manual_review: false,
+        reveal: null,
         ...overrides,
+    };
+}
+
+function envelope(resultOverrides = {}, attemptsOverrides = {}) {
+    return {
+        result: publicResult(resultOverrides),
+        attempts: {
+            used: 1,
+            allowed: 3,
+            remaining: 2,
+            ...attemptsOverrides,
+        },
     };
 }
 
@@ -91,7 +106,7 @@ beforeEach(() => {
         'fetch',
         vi.fn(async () => ({
             ok: true,
-            json: async () => publicResult({ passed: true, score: 2, percentage: 100 }),
+            json: async () => envelope({ passed: true, score: 2, percentage: 100 }),
         })),
     );
 });
@@ -148,7 +163,7 @@ describe('successful grading', () => {
 
         fetch.mockResolvedValueOnce({
             ok: true,
-            json: async () => publicResult({ score: 1, percentage: 50, passed: false }),
+            json: async () => envelope({ score: 1, percentage: 50, passed: false }, { used: 1, remaining: 2 }),
         });
 
         await component.submit();
@@ -159,7 +174,7 @@ describe('successful grading', () => {
 
         fetch.mockResolvedValueOnce({
             ok: true,
-            json: async () => publicResult({ score: 2, percentage: 100, passed: true }),
+            json: async () => envelope({ score: 2, percentage: 100, passed: true }, { used: 2, remaining: 1 }),
         });
 
         await component.submit();
@@ -179,7 +194,7 @@ describe('failed or malformed grading responses', () => {
 
         fetch.mockResolvedValueOnce({
             ok: false,
-            status: 422,
+            status: 500,
             json: async () => ({ message: 'nope' }),
         });
 
@@ -191,7 +206,7 @@ describe('failed or malformed grading responses', () => {
         expect(component.error).toBe(STRINGS.error);
     });
 
-    it('treats a 200 whose body is not the five-key result as an error', async () => {
+    it('treats a 200 whose body is not a grading envelope as an error', async () => {
         const component = activity();
 
         component.answers.q1 = 'q1-a';
@@ -208,6 +223,42 @@ describe('failed or malformed grading responses', () => {
         expect(component.firstResult).toBeNull();
         expect(component.latestResult).toBeNull();
         expect(component.error).toBe(STRINGS.error);
+    });
+});
+
+describe('blocked state', () => {
+    it('hides submit, announces once, and does not call fetch', async () => {
+        const component = activity();
+
+        component.answers.q1 = 'q1-a';
+        component.answers.q2 = 'q2-b';
+        component.attemptsInfo = { used: 2, allowed: 2, remaining: 0 };
+        component.latestResult = publicResult({ passed: false });
+
+        expect(component.isBlocked).toBe(true);
+
+        await component.submit();
+
+        expect(fetch).not.toHaveBeenCalled();
+        expect(component.error).toBe(STRINGS.submit_unavailable);
+
+        component.announceBlockedOnce();
+        const first = component.announcement;
+        component.announceBlockedOnce();
+        expect(component.announcement).toBe(first);
+    });
+
+    it('does not disturb autosave while blocked — onAnswer is a no-op', () => {
+        const queueSave = vi.fn();
+        const component = activity();
+
+        component.attemptsInfo = { used: 2, allowed: 2, remaining: 0 };
+        component.latestResult = publicResult({ passed: false });
+        component.player = () => ({ queueSave });
+
+        component.onAnswer();
+
+        expect(queueSave).not.toHaveBeenCalled();
     });
 });
 
@@ -241,10 +292,28 @@ describe('completion contributor', () => {
 });
 
 describe('isPublicResult', () => {
-    it('accepts only the exact five-key public shape', () => {
+    it('accepts the six-key shape and rejects five keys, seven keys, and malformed reveal', () => {
         expect(isPublicResult(publicResult())).toBe(true);
+        expect(isPublicResult({
+            score: 1,
+            max_score: 1,
+            percentage: 100,
+            passed: true,
+            requires_manual_review: false,
+        })).toBe(false);
         expect(isPublicResult({ ...publicResult(), details: [] })).toBe(false);
-        expect(isPublicResult({ score: 1, max_score: 1, percentage: 100, passed: true })).toBe(false);
+        expect(isPublicResult({
+            ...publicResult(),
+            reveal: { trigger: 'passed' },
+        })).toBe(false);
         expect(isPublicResult(null)).toBe(false);
+    });
+});
+
+describe('isGradingEnvelope', () => {
+    it('requires result and attempts only', () => {
+        expect(isGradingEnvelope(envelope())).toBe(true);
+        expect(isGradingEnvelope(publicResult())).toBe(false);
+        expect(isGradingEnvelope({ result: publicResult(), attempts: { used: 1 } })).toBe(false);
     });
 });

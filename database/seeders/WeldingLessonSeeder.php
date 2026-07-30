@@ -112,17 +112,31 @@ class WeldingLessonSeeder extends Seeder
         ]);
     }
 
-    private function fullGrading(string $rule, ?int $minScore = null, ?int $points = null): array
-    {
-        return [
+    private function fullGrading(
+        string $rule,
+        ?int $minScore = null,
+        ?int $points = null,
+        ?int $maxAttempts = null,
+        string $revealPolicy = 'never',
+        bool $revealAnswers = false,
+        bool $withReveal = true,
+    ): array {
+        $grading = [
             'rule' => $rule,
             'min_score' => $minScore,
             'allow_retry' => true,
-            'max_attempts' => null,
+            'max_attempts' => $maxAttempts,
             'show_feedback' => true,
             'record_first_attempt' => true,
             'points' => $points,
         ];
+
+        if ($withReveal) {
+            $grading['reveal_policy'] = $revealPolicy;
+            $grading['reveal_answers'] = $revealAnswers;
+        }
+
+        return $grading;
     }
 
     /**
@@ -517,7 +531,7 @@ class WeldingLessonSeeder extends Seeder
                     ],
                 ],
             ],
-            'grading' => $this->fullGrading('completion_only', null, 15),
+            'grading' => $this->fullGrading('completion_only', null, 15, withReveal: false),
         ]);
     }
 
@@ -700,7 +714,8 @@ class WeldingLessonSeeder extends Seeder
                     ],
                 ],
             ],
-            'grading' => $this->fullGrading('min_score', 80, 100),
+            // 3B acceptance path: two attempts, reveal on pass (with answers).
+            'grading' => $this->fullGrading('min_score', 80, 100, 2, 'on_pass', true),
         ]);
     }
 

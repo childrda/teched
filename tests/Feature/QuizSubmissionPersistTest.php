@@ -14,7 +14,7 @@ beforeEach(function () {
     asStudent();
 });
 
-test('quiz grading persists details while the HTTP body stays five keys', function () {
+test('quiz grading persists details while the HTTP envelope stays result plus attempts', function () {
     $this->seed(WeldingLessonSeeder::class);
     $lesson = Lesson::query()->where('code', 'WEL-6.1.1')->firstOrFail();
     $attempt = app(AttemptService::class)->resolveForPlayer(auth()->user(), $lesson)['attempt'];
@@ -32,13 +32,15 @@ test('quiz grading persists details while the HTTP body stays five keys', functi
         'response' => $answers,
     ])->assertOk()->json();
 
-    expect(count($body))->toBe(5)
-        ->and(array_key_exists('details', $body))->toBeFalse();
+    expect(array_keys($body))->toEqualCanonicalizing(['result', 'attempts'])
+        ->and(array_key_exists('details', $body))->toBeFalse()
+        ->and(array_key_exists('details', $body['result']))->toBeFalse();
 
     $row = BlockSubmission::query()->where('block_id', $quiz['block_id'])->firstOrFail();
     expect($row->grading_result)->toHaveKey('details')
         ->and($row->grading_result['details'])->not->toBeEmpty()
-        ->and($row->attempt_number)->toBe(1);
+        ->and($row->attempt_number)->toBe(1)
+        ->and($row->reveal_trigger)->toBe('passed');
 });
 
 test('two concurrent quiz submissions receive distinct attempt numbers', function () {

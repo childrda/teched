@@ -61,6 +61,28 @@ interface BlockType
      */
     public function gradingResponseShape(): ?string;
 
+    /**
+     * Validate and normalize publisher-owned grading for this type.
+     * Non-gradable types must receive null; reveal keys on them are errors.
+     *
+     * @param  array<string, mixed>|null  $grading
+     * @return array<string, mixed>|null
+     *
+     * @throws ValidationException
+     */
+    public function validateGrading(?array $grading): ?array;
+
+    /**
+     * Map an internal grading_result (with details[]) into student-safe
+     * reveal items. Shape is type-owned — quiz uses question_id; other
+     * gradable types must not be forced into quiz vocabulary.
+     *
+     * @param  array<string, mixed>  $internalResult
+     * @param  array<string, mixed>  $compiledConfig
+     * @return list<array<string, mixed>>
+     */
+    public function revealItems(array $internalResult, array $compiledConfig, bool $revealAnswers): array;
+
     /** Whether this type keeps student working state between visits. */
     public function holdsStudentState(): bool;
 

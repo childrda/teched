@@ -109,7 +109,15 @@
         "max_attempts": { "type": ["integer", "null"], "minimum": 1 },
         "show_feedback": { "type": "boolean" },
         "record_first_attempt": { "type": "boolean" },
-        "points": { "type": ["integer", "null"], "minimum": 0 }
+        "points": { "type": ["integer", "null"], "minimum": 0 },
+        "reveal_policy": {
+          "enum": ["never", "on_pass", "on_final_attempt", "on_pass_or_final_attempt"],
+          "description": "Auto-gradable only. on_final_attempt does not fire in Phase 3B (terminality arrives with the teacher dashboard)."
+        },
+        "reveal_answers": {
+          "type": "boolean",
+          "description": "Auto-gradable only. When true and reveal is earned, include correct_option_id. Independent of show_feedback."
+        }
       }
     },
     "block": {

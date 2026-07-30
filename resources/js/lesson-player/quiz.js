@@ -4,10 +4,9 @@ import { seededShuffle } from './seeded-shuffle';
  * Alpine component for a quiz block: local answers, a grading POST, and a
  * gradable completion contributor.
  *
- * Attempt state ({ attemptCount, firstResult, latestResult }) changes only
- * on a successful HTTP 200 whose body is the expected five-key result.
- * Everything else — 422, 404, network failure, malformed body — leaves those
- * three untouched and is surfaced as an error.
+ * Attempt state changes only on a successful HTTP 200 whose body is a grading
+ * envelope ({ result, attempts }) with a six-key public result. Everything
+ * else leaves that state untouched and is surfaced as an error.
  *
  * Question shuffle is normally done in Blade (PHP SeededShuffle). The Alpine
  * path below only runs when config.shuffle is true — kept for parity with
@@ -35,9 +34,11 @@ export function quizActivity(config = {}) {
     attemptCount: 0,
     firstResult: null,
     latestResult: null,
+    attemptsInfo: null,
     submitting: false,
     error: '',
     announcement: '',
+    blockedAnnounced: false,
     readOnly: false,
     disposeContributor: null,
 
@@ -57,16 +58,14 @@ export function quizActivity(config = {}) {
 
       const submission = player?.submissionFor?.(this.blockId);
 
-      if (submission && isPublicResult(submission)) {
-        this.latestResult = {
-          score: submission.score,
-          max_score: submission.max_score,
-          percentage: submission.percentage,
-          passed: submission.passed,
-          requires_manual_review: submission.requires_manual_review,
-        };
-        this.firstResult = this.latestResult;
-        this.attemptCount = submission.attempt_number ?? 1;
+      if (submission && isGradingEnvelope(submission.latest_result)) {
+        this.applyEnvelope(submission.latest_result, {
+          first: submission.first_result,
+        });
+      }
+
+      if (this.isBlocked) {
+        this.announceBlockedOnce();
       }
     },
 
@@ -91,9 +90,11 @@ export function quizActivity(config = {}) {
         isSatisfied: () => this.isSatisfied,
         isPassed: () => this.isPassed,
         message:
-          this.completionType === 'pass_activity'
-            ? (this.strings.gate_pass ?? this.strings.gate ?? '')
-            : (this.strings.gate ?? ''),
+          this.isBlocked
+            ? (this.strings.no_attempts_remaining ?? this.strings.gate_pass ?? this.strings.gate ?? '')
+            : this.completionType === 'pass_activity'
+              ? (this.strings.gate_pass ?? this.strings.gate ?? '')
+              : (this.strings.gate ?? ''),
       };
     },
 
@@ -116,7 +117,7 @@ export function quizActivity(config = {}) {
     },
 
     onAnswer() {
-      if (this.readOnly) {
+      if (this.readOnly || this.isBlocked) {
         return;
       }
 
@@ -129,6 +130,21 @@ export function quizActivity(config = {}) {
 
     get isPassed() {
       return this.latestResult?.passed === true;
+    },
+
+    get isBlocked() {
+      if (this.readOnly || this.isPassed) {
+        return false;
+      }
+
+      const info = this.attemptsInfo;
+
+      return (
+        info != null &&
+        info.allowed != null &&
+        typeof info.remaining === 'number' &&
+        info.remaining <= 0
+      );
     },
 
     get allAnswered() {
@@ -149,12 +165,58 @@ export function quizActivity(config = {}) {
       });
     },
 
+    get attemptsSummary() {
+      const info = this.attemptsInfo;
+
+      if (! info || info.allowed == null) {
+        return '';
+      }
+
+      return fill(this.strings.attempts_remaining, {
+        used: info.used,
+        allowed: info.allowed,
+        remaining: info.remaining,
+      });
+    },
+
     firstUnansweredId() {
       return questionIds.find((id) => this.answers[id] == null || this.answers[id] === '') ?? null;
     },
 
+    applyEnvelope(envelope, { first = undefined } = {}) {
+      this.latestResult = envelope.result;
+      this.attemptsInfo = envelope.attempts;
+      this.attemptCount = envelope.attempts?.used ?? this.attemptCount;
+
+      if (first === undefined) {
+        if (this.firstResult === null) {
+          this.firstResult = envelope.result;
+        }
+      } else if (first && isGradingEnvelope(first)) {
+        this.firstResult = first.result;
+      } else {
+        this.firstResult = null;
+      }
+    },
+
+    announceBlockedOnce() {
+      if (this.blockedAnnounced) {
+        return;
+      }
+
+      this.blockedAnnounced = true;
+      this.announce(this.strings.no_attempts_remaining ?? '');
+    },
+
     async submit() {
       if (this.submitting || this.readOnly) {
+        return;
+      }
+
+      if (this.isBlocked) {
+        this.error = this.strings.submit_unavailable ?? this.strings.no_attempts_remaining ?? '';
+        this.announceBlockedOnce();
+
         return;
       }
 
@@ -207,26 +269,39 @@ export function quizActivity(config = {}) {
           body = null;
         }
 
-        if (! response.ok || ! isPublicResult(body)) {
+        if (response.status === 422 && body?.message) {
+          this.error = body.message;
+          this.announce(this.error);
+
+          if (typeof body.message === 'string' && body.message.includes('No attempts remain')) {
+            this.attemptsInfo = {
+              used: this.attemptsInfo?.used ?? this.attemptCount,
+              allowed: this.attemptsInfo?.allowed ?? this.attemptCount,
+              remaining: 0,
+            };
+            this.announceBlockedOnce();
+          }
+
+          return;
+        }
+
+        if (! response.ok || ! isGradingEnvelope(body)) {
           this.error = this.strings.error ?? '';
           this.announce(this.error);
 
           return;
         }
 
-        // Display-only counter — the server assigns attempt_number.
-        this.attemptCount += 1;
-
-        if (this.firstResult === null) {
-          this.firstResult = body;
-        }
-
-        this.latestResult = body;
+        this.applyEnvelope(body);
         this.error = '';
 
-        const passLabel = body.passed ? this.strings.passed : this.strings.failed;
+        const passLabel = body.result.passed ? this.strings.passed : this.strings.failed;
 
         this.announce(`${this.resultSummary}. ${passLabel}`);
+
+        if (this.isBlocked) {
+          this.announceBlockedOnce();
+        }
       } catch {
         this.error = this.strings.error ?? '';
         this.announce(this.error);
@@ -261,26 +336,126 @@ export function quizActivity(config = {}) {
   };
 }
 
-/** The five keys the grading endpoint returns — nothing else counts as graded. */
+/** Exactly `result` and `attempts`, with a valid six-key public result. */
+export function isGradingEnvelope(body) {
+  if (! body || typeof body !== 'object' || Array.isArray(body)) {
+    return false;
+  }
+
+  const keys = Object.keys(body).sort();
+
+  if (keys.length !== 2 || keys[0] !== 'attempts' || keys[1] !== 'result') {
+    return false;
+  }
+
+  if (! isAttemptsInfo(body.attempts)) {
+    return false;
+  }
+
+  return isPublicResult(body.result);
+}
+
+/**
+ * The six keys the grading result object carries — nothing else counts.
+ * Nested `reveal` is validated separately when non-null so a malformed
+ * reveal rejects without accepting a five-key body.
+ */
 export function isPublicResult(body) {
   if (! body || typeof body !== 'object' || Array.isArray(body)) {
     return false;
   }
 
-  const keys = Object.keys(body).filter((key) => key !== 'attempt_number').sort();
-  const expected = ['max_score', 'passed', 'percentage', 'requires_manual_review', 'score'];
+  const keys = Object.keys(body).sort();
+  const expected = [
+    'max_score',
+    'passed',
+    'percentage',
+    'requires_manual_review',
+    'reveal',
+    'score',
+  ];
 
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
     return false;
   }
 
-  return (
-    typeof body.score === 'number' &&
-    typeof body.max_score === 'number' &&
-    typeof body.percentage === 'number' &&
-    typeof body.passed === 'boolean' &&
-    typeof body.requires_manual_review === 'boolean'
-  );
+  if (
+    typeof body.score !== 'number' ||
+    typeof body.max_score !== 'number' ||
+    typeof body.percentage !== 'number' ||
+    typeof body.passed !== 'boolean' ||
+    typeof body.requires_manual_review !== 'boolean'
+  ) {
+    return false;
+  }
+
+  if (body.reveal === null) {
+    return true;
+  }
+
+  return isRevealObject(body.reveal);
+}
+
+function isRevealObject(reveal) {
+  if (! reveal || typeof reveal !== 'object' || Array.isArray(reveal)) {
+    return false;
+  }
+
+  const keys = Object.keys(reveal).sort();
+
+  if (keys.length !== 2 || keys[0] !== 'items' || keys[1] !== 'trigger') {
+    return false;
+  }
+
+  if (reveal.trigger !== 'passed' && reveal.trigger !== 'final_attempt') {
+    return false;
+  }
+
+  if (! Array.isArray(reveal.items)) {
+    return false;
+  }
+
+  return reveal.items.every((item) => {
+    if (! item || typeof item !== 'object' || Array.isArray(item)) {
+      return false;
+    }
+
+    const itemKeys = Object.keys(item).sort();
+    const expected = ['correct', 'correct_option_id', 'feedback', 'question_id'];
+
+    if (itemKeys.length !== expected.length || itemKeys.some((key, index) => key !== expected[index])) {
+      return false;
+    }
+
+    return (
+      typeof item.question_id === 'string' &&
+      typeof item.correct === 'boolean' &&
+      (item.feedback === null || typeof item.feedback === 'string') &&
+      (item.correct_option_id === null || typeof item.correct_option_id === 'string')
+    );
+  });
+}
+
+function isAttemptsInfo(info) {
+  if (! info || typeof info !== 'object' || Array.isArray(info)) {
+    return false;
+  }
+
+  const keys = Object.keys(info).sort();
+
+  if (keys.length !== 3 || keys[0] !== 'allowed' || keys[1] !== 'remaining' || keys[2] !== 'used') {
+    return false;
+  }
+
+  if (typeof info.used !== 'number') {
+    return false;
+  }
+
+  const unlimited = info.allowed === null && info.remaining === null;
+  const limited =
+    typeof info.allowed === 'number' && typeof info.remaining === 'number';
+
+  return unlimited || limited;
 }
 
 function fill(template, values) {

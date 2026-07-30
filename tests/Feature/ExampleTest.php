@@ -1,5 +1,5 @@
 <?php
 
-test('the application returns a successful response', function () {
-    $this->get('/')->assertStatus(200);
+test('the home page requires authentication', function () {
+    $this->get('/')->assertRedirect(route('login'));
 });

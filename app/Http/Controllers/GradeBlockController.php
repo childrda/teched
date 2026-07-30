@@ -10,6 +10,8 @@ use App\Models\Lesson;
 use App\Models\LessonAttempt;
 use App\Services\AttemptService;
 use App\Services\GradingToken;
+use App\Services\RevealEvaluator;
+use App\Services\RetryPolicy;
 use App\Services\StudentManifest;
 use App\Support\ManifestBlockLookup;
 use App\Support\QuizResponseValidator;
@@ -23,10 +25,7 @@ use LogicException;
 /**
  * Grades one auto-gradable block against the student's in_progress attempt
  * pin. Persists the full internal grading_result (including details[]) while
- * returning only the five-key public shape.
- *
- * Retry stays unlimited in this phase — max_attempts is stored in the
- * manifest but not enforced until Phase 3B.
+ * returning the grading envelope: { result (six keys), attempts }.
  */
 class GradeBlockController extends Controller
 {
@@ -38,6 +37,8 @@ class GradeBlockController extends Controller
         private readonly StudentGradingResult $studentResults,
         private readonly AttemptService $attempts,
         private readonly ManifestBlockLookup $blocks,
+        private readonly RetryPolicy $retries,
+        private readonly RevealEvaluator $reveals,
     ) {
     }
 
@@ -98,6 +99,13 @@ class GradeBlockController extends Controller
             $config = is_array($block['config'] ?? null) ? $block['config'] : [];
             $grading = is_array($block['grading'] ?? null) ? $block['grading'] : null;
 
+            // Eligibility before grading — refuse without recording anything.
+            if (! $this->retries->canSubmit($locked, $blockId, $grading)) {
+                return response()->json([
+                    'message' => __('quiz.no_attempts_remaining'),
+                ], 422);
+            }
+
             $validatedResponse = match ($shape) {
                 'quiz_answers' => $this->quizResponses->validate($config, $request->input('response')),
                 default => throw new LogicException(
@@ -119,10 +127,11 @@ class GradeBlockController extends Controller
                 ->where('block_id', $blockId)
                 ->max('attempt_number') + 1;
 
-            // Keep block_states after a successful quiz submission so a
-            // resumed student still sees the selections they submitted
-            // rather than an empty quiz.
-            BlockSubmission::query()->create([
+            $passed = (bool) $result['passed'];
+            $revealTrigger = $this->reveals->triggerForNewSubmission($grading, $passed);
+            $now = now();
+
+            $row = BlockSubmission::query()->create([
                 'lesson_attempt_id' => $locked->id,
                 'lesson_version_id' => $locked->lesson_version_id,
                 'block_id' => $blockId,
@@ -135,17 +144,21 @@ class GradeBlockController extends Controller
                 'score' => $result['score'],
                 'max_score' => $result['max_score'],
                 'percentage' => $result['percentage'],
-                'passed' => (bool) $result['passed'],
+                'passed' => $passed,
                 'requires_manual_review' => (bool) ($result['requires_manual_review'] ?? false),
+                'reveal_trigger' => $revealTrigger,
+                'revealed_at' => $revealTrigger !== null ? $now : null,
                 'active_seconds_at_submission' => $locked->active_seconds,
-                'submitted_at' => now(),
+                'submitted_at' => $now,
             ]);
 
-            $locked->forceFill(['last_activity_at' => now()])->save();
+            $locked->forceFill(['last_activity_at' => $now])->save();
 
-            // Public response unchanged — exactly five keys. details[] lives
-            // only in the database for Phase 3B and teacher reporting.
-            return response()->json($this->studentResults->map($result));
+            $reveal = $this->studentResults->revealFromSubmission($row, $type, $config, $grading);
+            $public = $this->studentResults->mapResult($result, $reveal);
+            $counts = $this->retries->counts($locked, $blockId, $grading);
+
+            return response()->json($this->studentResults->envelope($public, $counts));
         });
     }
 

@@ -33,6 +33,28 @@ function asStudent(?User $user = null): User
     return $user;
 }
 
+/** Authenticate as a teacher (role set explicitly — not mass-assignable). */
+function asTeacher(?User $user = null): User
+{
+    $user ??= User::factory()->create();
+    $user->forceFill(['role' => App\Enums\UserRole::Teacher])->save();
+    $user->refresh();
+    test()->actingAs($user);
+
+    return $user;
+}
+
+/** Authenticate as an admin (role set explicitly — not mass-assignable). */
+function asAdmin(?User $user = null): User
+{
+    $user ??= User::factory()->create();
+    $user->forceFill(['role' => App\Enums\UserRole::Admin])->save();
+    $user->refresh();
+    test()->actingAs($user);
+
+    return $user;
+}
+
 /**
  * Validates a decoded manifest array against docs/schemas/lesson-manifest.schema.json.
  * Returns [bool $valid, string $errors].
@@ -63,22 +85,37 @@ function validateManifestAgainstSchema(array $manifest): array
  * Recursively asserts (case-insensitively) that none of the forbidden
  * answer-revealing keys appear anywhere in the given data.
  */
+/**
+ * Student-facing payloads must never leak answer keys, rubrics, source refs,
+ * or internal details[]. Feedback is forbidden everywhere except inside a
+ * reveal.items[] entry (earned disclosure).
+ */
 function assertNoForbiddenKeys(array $data): void
 {
-    $forbidden = ['answer_id', 'feedback', 'rubric_html', 'source_ref'];
+    $alwaysForbidden = ['answer_id', 'rubric_html', 'source_ref', 'details'];
 
-    $walk = function ($value, string $path) use (&$walk, $forbidden) {
+    $walk = function ($value, string $path) use (&$walk, $alwaysForbidden) {
         if (! is_array($value)) {
             return;
         }
 
         foreach ($value as $key => $child) {
+            $childPath = is_string($key) ? "{$path}.{$key}" : "{$path}[{$key}]";
+
             if (is_string($key)) {
-                expect(in_array(strtolower($key), $forbidden, true))
-                    ->toBeFalse("Forbidden key \"{$key}\" found at {$path}.{$key}");
+                $lower = strtolower($key);
+
+                expect(in_array($lower, $alwaysForbidden, true))
+                    ->toBeFalse("Forbidden key \"{$key}\" found at {$childPath}");
+
+                if ($lower === 'feedback') {
+                    $inRevealItem = (bool) preg_match('/\.reveal\.items\[\d+\]$/', $path);
+                    expect($inRevealItem)
+                        ->toBeTrue("Forbidden key \"feedback\" found at {$childPath}");
+                }
             }
 
-            $walk($child, is_string($key) ? "{$path}.{$key}" : "{$path}[{$key}]");
+            $walk($child, $childPath);
         }
     };
 
@@ -168,6 +205,8 @@ function fullGradingShape(string $rule = 'all_correct', ?int $minScore = null): 
         'show_feedback' => true,
         'record_first_attempt' => true,
         'points' => null,
+        'reveal_policy' => 'never',
+        'reveal_answers' => false,
     ];
 }
 

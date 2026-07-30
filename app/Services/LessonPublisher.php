@@ -106,12 +106,15 @@ class LessonPublisher
 
         $validated = $type->validateConfig($block->config ?? []);
         $compiled = $type->compileConfig($validated);
+        $grading = $type->validateGrading(
+            is_array($block->grading) ? $block->grading : null
+        );
 
         return [
             'block_id' => $block->block_id,
             'type' => $typeKey,
             'config' => $compiled,
-            'grading' => $block->grading,
+            'grading' => $grading,
         ];
     }
 }

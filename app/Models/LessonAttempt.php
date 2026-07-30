@@ -17,6 +17,7 @@ class LessonAttempt extends Model
             'status' => AttemptStatus::class,
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
+            'superseded_at' => 'datetime',
             'last_activity_at' => 'datetime',
             'active_seconds' => 'integer',
             'revision' => 'integer',
@@ -48,6 +49,16 @@ class LessonAttempt extends Model
         return $this->hasMany(BlockSubmission::class);
     }
 
+    public function retryGrants(): HasMany
+    {
+        return $this->hasMany(AttemptRetryGrant::class);
+    }
+
+    public function supersededBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'superseded_by_user_id');
+    }
+
     public function isInProgress(): bool
     {
         return $this->status === AttemptStatus::InProgress;
@@ -56,5 +67,10 @@ class LessonAttempt extends Model
     public function isCompleted(): bool
     {
         return $this->status === AttemptStatus::Completed;
+    }
+
+    public function isSuperseded(): bool
+    {
+        return $this->status === AttemptStatus::Superseded;
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Blocks;
 
 use App\Blocks\Contracts\BlockType;
+use App\Support\GradingConfig;
 use App\Support\PlainText;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
 use Illuminate\Validation\ValidationException;
@@ -48,6 +49,16 @@ abstract class AbstractBlockType implements BlockType
     public function gradingResponseShape(): ?string
     {
         return null;
+    }
+
+    public function validateGrading(?array $grading): ?array
+    {
+        return GradingConfig::validateAndCompile($grading, $this->isAutoGradable());
+    }
+
+    public function revealItems(array $internalResult, array $compiledConfig, bool $revealAnswers): array
+    {
+        return [];
     }
 
     public function holdsStudentState(): bool

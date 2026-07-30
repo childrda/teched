@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('home'));
 
+        $middleware->alias([
+            'staff' => \App\Http\Middleware\EnsureStaff::class,
+        ]);
+
         // Preserve student-typed whitespace in autosave state payloads.
         $middleware->replace(
             \Illuminate\Foundation\Http\Middleware\TrimStrings::class,

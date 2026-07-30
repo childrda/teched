@@ -46,6 +46,12 @@
             'failed' => __('quiz.failed'),
             'passed_symbol' => __('quiz.passed_symbol'),
             'failed_symbol' => __('quiz.failed_symbol'),
+            'attempts_remaining' => __('quiz.attempts_remaining'),
+            'no_attempts_remaining' => __('quiz.no_attempts_remaining'),
+            'submit_unavailable' => __('quiz.submit_unavailable'),
+            'reveal_heading' => __('quiz.reveal_heading'),
+            'reveal_correct' => __('quiz.reveal_correct'),
+            'reveal_incorrect' => __('quiz.reveal_incorrect'),
             'error' => __('quiz.error'),
             'error_retry' => __('quiz.error_retry'),
         ],
@@ -93,14 +99,23 @@
         </fieldset>
     @endforeach
 
+    <p class="text-sm text-slate-700" x-show="attemptsSummary" x-text="attemptsSummary"></p>
+
     <div class="flex flex-wrap items-center gap-3">
         <button type="button"
                 class="player-btn player-btn-primary"
-                x-show="! readOnly"
+                x-show="! readOnly && ! isBlocked"
                 :aria-disabled="submitting ? 'true' : 'false'"
                 @click="submit()"
                 x-text="submitting ? strings.submitting : (latestResult ? strings.retry : strings.submit)"></button>
     </div>
+
+    <template x-if="isBlocked">
+        <div class="rounded-md border-2 border-amber-800 bg-amber-50 p-4">
+            <p class="font-semibold text-amber-950" x-text="strings.no_attempts_remaining"></p>
+            <p class="mt-2 text-sm text-amber-950" x-text="strings.submit_unavailable"></p>
+        </div>
+    </template>
 
     {{-- Visible only. Deliberately not a live region: the sr-only region
          below announces this text via announce(), so a second status here
@@ -113,10 +128,22 @@
                 <span aria-hidden="true" x-text="latestResult.passed ? strings.passed_symbol : strings.failed_symbol"></span>
                 <span x-text="latestResult.passed ? strings.passed : strings.failed"></span>
             </p>
+
+            <template x-if="latestResult.reveal">
+                <div class="mt-4 space-y-2 border-t border-slate-300 pt-3">
+                    <h4 class="font-semibold" x-text="strings.reveal_heading"></h4>
+                    <template x-for="item in latestResult.reveal.items" :key="item.question_id">
+                        <p class="text-sm">
+                            <span x-text="item.correct ? strings.reveal_correct : strings.reveal_incorrect"></span>
+                            <span x-show="item.feedback" x-text="item.feedback ? (' — ' + item.feedback) : ''"></span>
+                        </p>
+                    </template>
+                </div>
+            </template>
         </div>
     </template>
 
-    <template x-if="error">
+    <template x-if="error && ! isBlocked">
         <div class="rounded-md border-2 border-amber-800 bg-amber-50 p-4">
             <p class="font-semibold text-amber-950" x-text="error"></p>
             <button type="button"

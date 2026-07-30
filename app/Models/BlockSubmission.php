@@ -35,6 +35,7 @@ class BlockSubmission extends Model
             'attempt_number' => 'integer',
             'active_seconds_at_submission' => 'integer',
             'submitted_at' => 'datetime',
+            'revealed_at' => 'datetime',
         ];
     }
 

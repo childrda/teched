@@ -73,7 +73,7 @@ function grade(string $code, string $blockId, mixed $token, mixed $response)
     return test()->postJson(gradeUrl($code, $blockId), $payload);
 }
 
-test('a valid complete submission returns exactly the five public keys', function () {
+test('a valid complete submission returns a grading envelope with a six-key result', function () {
     $this->seed(WeldingLessonSeeder::class);
 
     $lesson = Lesson::query()->where('code', 'WEL-6.1.1')->firstOrFail();
@@ -86,22 +86,32 @@ test('a valid complete submission returns exactly the five public keys', functio
         ->assertOk()
         ->json();
 
-    expect(array_keys($response))->toEqualCanonicalizing([
+    expect(array_keys($response))->toEqualCanonicalizing(['result', 'attempts'])
+        ->and(count($response))->toBe(2);
+
+    expect(array_keys($response['result']))->toEqualCanonicalizing([
         'score',
         'max_score',
         'percentage',
         'passed',
         'requires_manual_review',
-    ])->and(count($response))->toBe(5);
+        'reveal',
+    ])->and(count($response['result']))->toBe(6);
 
-    expect($response['score'])->toBe(10)
-        ->and($response['max_score'])->toBe(10)
-        ->and($response['percentage'])->toBe(100)
-        ->and($response['passed'])->toBeTrue()
-        ->and($response['requires_manual_review'])->toBeFalse();
+    expect($response['result']['score'])->toBe(10)
+        ->and($response['result']['max_score'])->toBe(10)
+        ->and($response['result']['percentage'])->toBe(100)
+        ->and($response['result']['passed'])->toBeTrue()
+        ->and($response['result']['requires_manual_review'])->toBeFalse()
+        ->and($response['result']['reveal'])->not->toBeNull()
+        ->and($response['attempts']['used'])->toBe(1)
+        ->and($response['attempts']['allowed'])->toBe(2)
+        ->and($response['attempts']['remaining'])->toBe(1);
+
+    assertNoForbiddenKeys($response);
 });
 
-test('the public grading body never carries details, correctness, feedback, or answer keys', function () {
+test('a failing submission without earned reveal carries no feedback or answer keys', function () {
     $this->seed(WeldingLessonSeeder::class);
 
     $lesson = Lesson::query()->where('code', 'WEL-6.1.1')->firstOrFail();
@@ -109,25 +119,24 @@ test('the public grading body never carries details, correctness, feedback, or a
     $payload = studentPayload($lesson);
     $quiz = blockOfType($manifest['pages'], 'quiz');
 
-    $wrong = correctQuizAnswers($quiz['config']);
-    $firstId = array_key_first($wrong);
-    $options = collect($quiz['config']['questions'])->firstWhere('id', $firstId)['options'];
-    $wrong[$firstId] = collect($options)->first(
-        fn (array $option) => $option['id'] !== $wrong[$firstId]
-    )['id'];
+    // Mark every question wrong so min_score:80 does not pass (and reveal stays null).
+    $wrong = [];
+    foreach ($quiz['config']['questions'] as $question) {
+        $wrong[$question['id']] = collect($question['options'])->first(
+            fn (array $option) => $option['id'] !== $question['answer_id']
+        )['id'];
+    }
 
     $body = grade($lesson->code, $quiz['block_id'], $payload['grading_token'], $wrong)
         ->assertOk()
         ->json();
 
-    $encoded = json_encode($body);
-
-    foreach (['details', 'correct', 'feedback', 'answer_id', 'source_ref'] as $forbidden) {
-        expect($encoded)->not->toContain($forbidden);
-    }
+    expect($body['result']['passed'])->toBeFalse()
+        ->and($body['result']['reveal'])->toBeNull();
+    assertNoForbiddenKeys($body);
 
     foreach ($quiz['config']['questions'] as $question) {
-        expect($encoded)->not->toContain($question['feedback']);
+        expect(json_encode($body))->not->toContain($question['feedback']);
     }
 });
 
@@ -397,7 +406,8 @@ test('grading is bound to the version in the token, not the current publish', fu
     // v1 key says "a" is correct — creates an attempt pinned to v1.
     grade($lesson->code, $blockId, $v1Token, ['q1' => 'a'])
         ->assertOk()
-        ->assertJson(['score' => 1, 'passed' => true]);
+        ->assertJsonPath('result.score', 1)
+        ->assertJsonPath('result.passed', true);
 
     $block = $page->blocks()->first();
     $config = $block->config;
@@ -411,7 +421,8 @@ test('grading is bound to the version in the token, not the current publish', fu
     // grades with v1's key and a v2 token is rejected as a pin mismatch.
     grade($lesson->code, $blockId, $v1Token, ['q1' => 'a'])
         ->assertOk()
-        ->assertJson(['score' => 1, 'passed' => true]);
+        ->assertJsonPath('result.score', 1)
+        ->assertJsonPath('result.passed', true);
 
     $v2Token = studentPayload($lesson)['grading_token'];
 
@@ -423,7 +434,8 @@ test('grading is bound to the version in the token, not the current publish', fu
     asStudent();
     grade($lesson->code, $blockId, $v2Token, ['q1' => 'a'])
         ->assertOk()
-        ->assertJson(['score' => 0, 'passed' => false]);
+        ->assertJsonPath('result.score', 0)
+        ->assertJsonPath('result.passed', false);
 });
 
 test('a forged encrypt payload for another lesson is rejected', function () {
