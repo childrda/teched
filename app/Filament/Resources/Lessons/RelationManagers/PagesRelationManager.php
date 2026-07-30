@@ -8,7 +8,6 @@ use App\Filament\Resources\Lessons\Resources\LessonPages\LessonPageResource;
 use App\Models\Lesson;
 use App\Models\LessonPage;
 use App\Services\LessonAuthoringService;
-use App\Services\LessonContentDuplicator;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Select;
@@ -127,13 +126,28 @@ class PagesRelationManager extends RelationManager
                     ->action(function (array $data): void {
                         $source = LessonPage::query()->with('lesson')->findOrFail($data['source_page_id']);
                         Gate::authorize('view', $source->lesson);
-                        Gate::authorize('update', $this->getOwnerRecord());
-                        app(LessonContentDuplicator::class)->copyPageInto($source, $this->getOwnerRecord());
-                        Notification::make()->title('Page copied into lesson')->success()->send();
                         /** @var Lesson $lesson */
-                        $lesson = $this->getOwnerRecord();
-                        $lesson->forceFill(['updated_by' => Auth::id()])->save();
-                        $lesson->markUnpublishedChanges();
+                        $lesson = $this->getOwnerRecord()->fresh();
+                        Gate::authorize('update', $lesson);
+
+                        try {
+                            app(LessonAuthoringService::class)->copyPageInto(
+                                $source,
+                                $lesson,
+                                Auth::user(),
+                                $lesson->updated_at?->toISOString(),
+                            );
+                            Notification::make()->title('Page copied into lesson')->success()->send();
+                        } catch (StaleLessonEditException|AuthoringValidationException $e) {
+                            $body = $e instanceof AuthoringValidationException
+                                ? implode("\n", $e->errors)
+                                : $e->getMessage();
+                            Notification::make()
+                                ->title('Copy failed')
+                                ->body($body)
+                                ->danger()
+                                ->send();
+                        }
                     }),
             ])
             ->recordActions([

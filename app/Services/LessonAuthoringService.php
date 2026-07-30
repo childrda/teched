@@ -345,6 +345,27 @@ class LessonAuthoringService
     }
 
     /**
+     * Copy a page from any viewable lesson into $target (fresh identifiers).
+     *
+     * Concurrency token: lessons.updated_at — adding a page changes the page graph.
+     */
+    public function copyPageInto(LessonPage $sourcePage, Lesson $target, User $user, ?string $expectedUpdatedAt = null): LessonPage
+    {
+        return DB::transaction(function () use ($sourcePage, $target, $user, $expectedUpdatedAt) {
+            /** @var Lesson $locked */
+            $locked = Lesson::query()->lockForUpdate()->findOrFail($target->getKey());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+
+            $copy = $this->duplicator->copyPageInto($sourcePage, $locked);
+
+            $locked->forceFill(['updated_by' => $user->getKey()])->save();
+            $locked->markUnpublishedChanges();
+
+            return $copy->fresh('blocks');
+        });
+    }
+
+    /**
      * Validate for publish with addressed errors, then create a new version.
      *
      * @throws AuthoringValidationException
