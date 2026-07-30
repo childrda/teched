@@ -23,6 +23,11 @@ class SchoolClassPolicy
         return $this->activeMembership($user, $schoolClass) !== null;
     }
 
+    public function create(User $user): bool
+    {
+        return $user->isAdmin() || $user->isTeacher();
+    }
+
     public function update(User $user, SchoolClass $schoolClass): bool
     {
         if ($user->isAdmin()) {
@@ -32,6 +37,20 @@ class SchoolClassPolicy
         $membership = $this->activeMembership($user, $schoolClass);
 
         return $membership !== null && $membership->role === ClassRole::Teacher;
+    }
+
+    /**
+     * Manage roster and assignments — same bar as update.
+     */
+    public function manage(User $user, SchoolClass $schoolClass): bool
+    {
+        return $this->update($user, $schoolClass);
+    }
+
+    public function delete(User $user, SchoolClass $schoolClass): bool
+    {
+        // Classes are deactivated, not deleted, in this phase.
+        return false;
     }
 
     private function activeMembership(User $user, SchoolClass $schoolClass): ?ClassMembership

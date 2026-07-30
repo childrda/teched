@@ -141,6 +141,11 @@ round-trips painful for interactions. Publishing still goes through
 `LessonPublisher` and writes immutable `lesson_versions`; the student player is
 unchanged.
 
+**New staff surfaces go in Filament** (classes, rosters, assignments at
+`/admin`). Phase 4B’s `/staff` progress views stay where they are until there
+is a reason to move them — consolidation is directional, not a rewrite of the
+intervention screens.
+
 ## Local setup
 
 Requirements: PHP 8.2+, Composer, MySQL/MariaDB (developed against XAMPP

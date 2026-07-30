@@ -13,15 +13,29 @@ class LessonAssignment extends Model
 {
     protected $guarded = [];
 
+    /**
+     * active_scope is a MySQL generated column for the one-active unique
+     * index. Entirely internal: never cast, never filled, never displayed.
+     */
+    protected $hidden = [
+        'active_scope',
+    ];
+
     protected function casts(): array
     {
         return [
             'available_at' => 'datetime',
             // Informational only in 4A — deliberately unenforced.
             'due_at' => 'datetime',
+            'archived_at' => 'datetime',
             // Reserved and unread in this phase.
             'settings' => 'array',
         ];
+    }
+
+    public function setActiveScopeAttribute($value): void
+    {
+        // Generated column — application code must never write it.
     }
 
     public function schoolClass(): BelongsTo
@@ -49,6 +63,16 @@ class LessonAssignment extends Model
         return $this->hasMany(LessonAttempt::class);
     }
 
+    public function statusChanges(): HasMany
+    {
+        return $this->hasMany(LessonAssignmentStatusChange::class);
+    }
+
+    public function versionChanges(): HasMany
+    {
+        return $this->hasMany(LessonAssignmentVersionChange::class);
+    }
+
     public function isAvailable(?\DateTimeInterface $at = null): bool
     {
         if ($this->available_at === null) {
@@ -58,6 +82,11 @@ class LessonAssignment extends Model
         $at = $at ?? now();
 
         return $this->available_at->lte($at);
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
     }
 
     /**

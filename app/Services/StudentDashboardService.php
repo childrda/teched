@@ -15,6 +15,11 @@ use Illuminate\Support\Collection;
  */
 class StudentDashboardService
 {
+    public function __construct(
+        private readonly LessonAssignmentService $assignmentAccess,
+    ) {
+    }
+
     /**
      * @return array{
      *     assignments: list<array<string, mixed>>,
@@ -90,29 +95,38 @@ class StudentDashboardService
         $active = $membership?->isActive() === true;
         $available = $assignment->isAvailable();
         $resolved = $this->pickPrimary($attempts);
+        $mayStart = $this->assignmentAccess->mayStartAttempt($user, $assignment);
+        $mayResume = $this->assignmentAccess->mayResumeAttempt($user, $assignment);
+        $mayView = $this->assignmentAccess->mayViewAssignment($user, $assignment);
 
-        $action = 'start';
-        $url = route('player.assignments.show', $assignment);
+        $action = 'none';
+        $url = null;
+        $status = 'not_started';
 
-        if (! $available) {
+        if ($resolved['attempt'] !== null && $resolved['attempt']->status === AttemptStatus::InProgress) {
+            $status = 'in_progress';
+            if ($mayResume) {
+                $action = 'resume';
+                $url = route('player.assignments.show', $assignment);
+            }
+        } elseif ($resolved['attempt'] !== null && $resolved['attempt']->status === AttemptStatus::Completed) {
+            $status = 'completed';
+            if ($mayView) {
+                $action = 'view';
+                $url = route('player.assignments.show', $assignment);
+            }
+        } elseif (! $available) {
             $status = 'unavailable';
-            $action = 'none';
-            $url = null;
         } elseif (! $active) {
-            $status = $resolved['attempt']?->status->value ?? 'withdrawn';
-            $action = $resolved['attempt'] !== null && $resolved['attempt']->status === AttemptStatus::Completed
-                ? 'view'
-                : 'none';
-            $url = $action === 'view' ? route('player.assignments.show', $assignment) : null;
-        } elseif ($resolved['attempt'] === null) {
+            $status = 'withdrawn';
+        } elseif ($mayStart) {
             $status = 'not_started';
             $action = 'start';
-        } elseif ($resolved['attempt']->status === AttemptStatus::InProgress) {
-            $status = 'in_progress';
-            $action = 'resume';
+            $url = route('player.assignments.show', $assignment);
         } else {
-            $status = 'completed';
-            $action = 'view';
+            // Inactive class or archived assignment with no attempt yet.
+            $status = 'not_started';
+            $action = 'none';
         }
 
         return [
