@@ -339,17 +339,24 @@ test('visibleTo agrees with the attempt policy on the same fixtures', function (
     $this->get(route('player.assignments.show', $fx['assignmentB']))->assertOk();
     $unassigned = app(AttemptService::class)->resolveForPlayer($fx['student'], $fx['lesson'])['attempt'];
 
-    $all = LessonAttempt::query()->where('user_id', $fx['student']->id)->get();
-
+    // Teacher's own practice attempt — policy allows view; scope must too.
     asTeacher($fx['teacher']);
+    $teacherOwn = app(AttemptService::class)->resolveForPlayer($fx['teacher'], $fx['lesson'])['attempt'];
+
+    $all = LessonAttempt::query()
+        ->whereIn('user_id', [$fx['student']->id, $fx['teacher']->id])
+        ->get();
+
     $visible = LessonAttempt::query()->visibleTo($fx['teacher'])->pluck('id')->all();
 
     foreach ($all as $attempt) {
         $allowed = $fx['teacher']->can('view', $attempt);
-        expect(in_array($attempt->id, $visible, true))->toBe($allowed);
+        expect(in_array($attempt->id, $visible, true))
+            ->toBe($allowed, "visibleTo/policy disagree on attempt {$attempt->id}");
     }
 
-    expect($visible)->not->toContain($unassigned->id);
+    expect($visible)->not->toContain($unassigned->id)
+        ->and($visible)->toContain($teacherOwn->id);
 
     $finderIds = collect(app(BlockedAttemptFinder::class)->forUser($fx['teacher']))
         ->pluck('attempt.id')

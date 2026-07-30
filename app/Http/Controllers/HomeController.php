@@ -2,48 +2,47 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\LessonStatus;
-use App\Models\Lesson;
-use App\Services\AttemptService;
+use App\Models\SchoolClass;
+use App\Services\StudentDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * Deliberately plain student landing — published lessons with Start/Resume.
- * Not assignment-aware; 4A/4B replace this with the real dashboard. Keep it
- * minimal so nobody mistakes it for finished product.
+ * Student home: class assignments and practice. Staff landing: classes.
  */
 class HomeController extends Controller
 {
-    public function __construct(private readonly AttemptService $attempts)
+    public function __construct(private readonly StudentDashboardService $dashboard)
     {
     }
 
     public function __invoke(Request $request): View
     {
         $user = $request->user();
+        $isStaff = $user !== null && ($user->isTeacher() || $user->isAdmin());
 
-        $lessons = Lesson::query()
-            ->where('status', LessonStatus::Published)
-            ->whereNotNull('current_version')
-            ->orderBy('code')
-            ->get();
+        if ($isStaff) {
+            $classes = SchoolClass::query()
+                ->visibleTo($user)
+                ->withCount('assignments')
+                ->orderBy('name')
+                ->paginate(30);
 
-        $rows = $lessons->map(function (Lesson $lesson) use ($user) {
-            $resolved = $user !== null
-                ? $this->attempts->existingAttempt($user, $lesson)
-                : null;
+            return view('home', [
+                'isStaff' => true,
+                'classes' => $classes,
+                'assignments' => [],
+                'practice' => [],
+            ]);
+        }
 
-            return [
-                'lesson' => $lesson,
-                'attempt' => $resolved['attempt'] ?? null,
-                'read_only' => $resolved['read_only'] ?? false,
-            ];
-        });
+        $data = $this->dashboard->forStudent($user);
 
         return view('home', [
-            'rows' => $rows,
-            'isStaff' => $user !== null && ($user->isTeacher() || $user->isAdmin()),
+            'isStaff' => false,
+            'classes' => null,
+            'assignments' => $data['assignments'],
+            'practice' => $data['practice'],
         ]);
     }
 }

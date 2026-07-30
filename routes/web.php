@@ -8,8 +8,15 @@ use App\Http\Controllers\Player\AssignmentPlayerController;
 use App\Http\Controllers\Player\ContinuePageController;
 use App\Http\Controllers\Player\RecordActivityController;
 use App\Http\Controllers\Player\SaveBlockStateController;
+use App\Http\Controllers\Staff\AssignmentShowController;
+use App\Http\Controllers\Staff\AttemptShowController;
 use App\Http\Controllers\Staff\BlockedAttemptsController;
+use App\Http\Controllers\Staff\ClassAssignmentsController;
+use App\Http\Controllers\Staff\ClassIndexController;
+use App\Http\Controllers\Staff\ConfirmReopenController;
+use App\Http\Controllers\Staff\ConfirmRestartController;
 use App\Http\Controllers\Staff\GrantRetriesController;
+use App\Http\Controllers\Staff\ReopenAttemptController;
 use App\Http\Controllers\Staff\RestartAttemptController;
 use Illuminate\Support\Facades\Route;
 
@@ -54,7 +61,23 @@ Route::middleware('auth')->group(function () {
 });
 
 Route::middleware(['auth', 'staff'])->prefix('staff')->name('staff.')->group(function () {
+    Route::get('/classes', ClassIndexController::class)->name('classes.index');
+    Route::get('/classes/{schoolClass}/assignments', ClassAssignmentsController::class)
+        ->name('classes.assignments');
+    Route::get('/assignments/{assignment}', AssignmentShowController::class)
+        ->name('assignments.show');
+    Route::get('/attempts/{attempt}', AttemptShowController::class)->name('attempts.show');
+
     Route::get('/blocked-attempts', BlockedAttemptsController::class)->name('blocked-attempts');
-    Route::post('/attempts/{attempt}/grant-retries', GrantRetriesController::class)->name('attempts.grant-retries');
-    Route::post('/attempts/{attempt}/restart', RestartAttemptController::class)->name('attempts.restart');
+
+    Route::post('/attempts/{attempt}/grant-retries', GrantRetriesController::class)
+        ->name('attempts.grant-retries');
+    Route::get('/attempts/{attempt}/restart/confirm', ConfirmRestartController::class)
+        ->name('attempts.restart.confirm');
+    Route::post('/attempts/{attempt}/restart', RestartAttemptController::class)
+        ->name('attempts.restart');
+    Route::get('/attempts/{attempt}/reopen/confirm', ConfirmReopenController::class)
+        ->name('attempts.reopen.confirm');
+    Route::post('/attempts/{attempt}/reopen', ReopenAttemptController::class)
+        ->name('attempts.reopen');
 });

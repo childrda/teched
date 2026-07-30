@@ -361,7 +361,7 @@ test('students get 403 on staff routes while rostered teachers can grant and res
         'block_id' => $quiz['block_id'],
         'additional_attempts' => 1,
         'reason' => 'stuck',
-    ])->assertRedirect(route('staff.blocked-attempts'));
+    ])->assertRedirect(route('staff.attempts.show', $attempt));
 
     expect(AttemptRetryGrant::query()->where('lesson_attempt_id', $attempt->id)->count())->toBe(1);
 
@@ -370,7 +370,7 @@ test('students get 403 on staff routes while rostered teachers can grant and res
     $subsBefore = $attempt->blockSubmissions()->count();
 
     test()->post(route('staff.attempts.restart', $attempt))
-        ->assertRedirect(route('staff.blocked-attempts'));
+        ->assertRedirect();
 
     $old = LessonAttempt::query()->findOrFail($oldId);
     expect($old->status)->toBe(AttemptStatus::Superseded)
@@ -421,13 +421,47 @@ test('a superseded attempt is never the student read-only view while a newer in_
         ->and($attempt->fresh()->status)->toBe(AttemptStatus::Superseded);
 });
 
-test('the home page lists published lessons for a student', function () {
-    asStudent();
-    $lesson = createLessonWithAllBlockTypes();
-    app(LessonPublisher::class)->publish($lesson, User::factory()->create());
+test('the home page lists class assignments for a student', function () {
+    $fx = (function () {
+        // Local roster: one assignment the student can start.
+        $teacher = asTeacher();
+        $student = User::factory()->create();
+        $lesson = createLessonWithAllBlockTypes();
+        app(LessonPublisher::class)->publish($lesson, $teacher);
+        $lesson = $lesson->fresh();
+        $class = App\Models\SchoolClass::query()->create([
+            'name' => 'Home class',
+            'teacher_id' => $teacher->id,
+            'school_year' => '2026-2027',
+            'active' => true,
+        ]);
+        App\Models\ClassMembership::query()->create([
+            'school_class_id' => $class->id,
+            'user_id' => $teacher->id,
+            'role' => App\Enums\ClassRole::Teacher,
+            'joined_at' => now(),
+        ]);
+        App\Models\ClassMembership::query()->create([
+            'school_class_id' => $class->id,
+            'user_id' => $student->id,
+            'role' => App\Enums\ClassRole::Student,
+            'joined_at' => now(),
+        ]);
+        $assignment = App\Models\LessonAssignment::query()->create([
+            'school_class_id' => $class->id,
+            'lesson_id' => $lesson->id,
+            'lesson_version_id' => $lesson->currentVersion()->id,
+            'assigned_by_user_id' => $teacher->id,
+            'available_at' => now()->subHour(),
+            'due_at' => now()->addWeek(),
+        ]);
 
+        return compact('student', 'lesson', 'assignment');
+    })();
+
+    asStudent($fx['student']);
     test()->get(route('home'))
         ->assertOk()
-        ->assertSee($lesson->title, false)
-        ->assertSee('Start', false);
+        ->assertSee($fx['lesson']->title, false)
+        ->assertSee(__('home.action_start'), false);
 });

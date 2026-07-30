@@ -12,50 +12,120 @@
         <header class="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-semibold">{{ config('app.name', 'TechEd') }}</h1>
-                <p class="mt-1 text-slate-600">Published lessons</p>
+                <p class="mt-1 text-slate-600">
+                    {{ $isStaff ? __('home.staff_intro') : __('home.student_intro') }}
+                </p>
             </div>
             <x-auth.session />
         </header>
 
         @if ($isStaff)
-            <p class="mb-6">
+            <p class="mb-6 flex flex-wrap gap-4">
+                <a href="{{ route('staff.classes.index') }}" class="font-medium text-slate-900 underline">
+                    {{ __('home.view_classes') }}
+                </a>
                 <a href="{{ route('staff.blocked-attempts') }}" class="font-medium text-slate-900 underline">
-                    Blocked attempts
+                    {{ __('home.blocked_attempts') }}
                 </a>
             </p>
-        @endif
 
-        @if ($rows->isEmpty())
-            <p class="text-slate-600">No published lessons yet.</p>
+            @if ($classes->isEmpty())
+                <p class="text-slate-600">{{ __('home.no_classes') }}</p>
+            @else
+                <table class="w-full border-collapse border-2 border-slate-400 bg-white text-left">
+                    <caption class="mb-2 text-left font-semibold">{{ __('home.staff_intro') }}</caption>
+                    <thead>
+                        <tr class="border-b-2 border-slate-400 bg-slate-100">
+                            <th scope="col" class="px-3 py-2">Class</th>
+                            <th scope="col" class="px-3 py-2">{{ __('staff.assignments_title') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($classes as $class)
+                            <tr class="border-b border-slate-300">
+                                <th scope="row" class="px-3 py-3">
+                                    <a class="font-semibold underline" href="{{ route('staff.classes.assignments', $class) }}">
+                                        {{ $class->name }}
+                                    </a>
+                                    <span class="block text-sm font-normal text-slate-600">{{ $class->school_year }}</span>
+                                </th>
+                                <td class="px-3 py-3">{{ $class->assignments_count }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+                <div class="mt-4">{{ $classes->links() }}</div>
+            @endif
         @else
-            <ul class="space-y-3">
-                @foreach ($rows as $row)
-                    @php
-                        $lesson = $row['lesson'];
-                        $attempt = $row['attempt'];
-                    @endphp
-                    <li class="flex flex-wrap items-center justify-between gap-3 border border-slate-300 bg-white px-4 py-3">
-                        <div>
-                            <p class="font-semibold">{{ $lesson->title }}</p>
-                            <p class="text-sm text-slate-600">
-                                {{ $lesson->code }}
-                                @if ($attempt)
-                                    — {{ str_replace('_', ' ', $attempt->status->value) }}
-                                    @if ($row['read_only'])
-                                        (read-only)
+            @if (count($assignments) === 0)
+                <p class="text-slate-600">{{ __('home.no_assignments') }}</p>
+            @else
+                <table class="w-full border-collapse border-2 border-slate-400 bg-white text-left">
+                    <caption class="mb-2 text-left font-semibold">{{ __('home.student_intro') }}</caption>
+                    <thead>
+                        <tr class="border-b-2 border-slate-400 bg-slate-100">
+                            <th scope="col" class="px-3 py-2">{{ __('staff.column_lesson') }}</th>
+                            <th scope="col" class="px-3 py-2">{{ __('staff.column_status') }}</th>
+                            <th scope="col" class="px-3 py-2">{{ __('staff.column_due') }}</th>
+                            <th scope="col" class="px-3 py-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($assignments as $row)
+                            <tr class="border-b border-slate-300">
+                                <th scope="row" class="px-3 py-3">
+                                    <span class="font-semibold">{{ $row['lesson_title'] }}</span>
+                                    <span class="block text-sm font-normal text-slate-600">
+                                        {{ $row['lesson_code'] }} — {{ __('home.class_label', ['name' => $row['class_name']]) }}
+                                    </span>
+                                    @if (! $row['active_membership'] && $row['withdrawn_reason'])
+                                        <span class="mt-1 block text-sm font-normal">{{ $row['withdrawn_reason'] }}</span>
                                     @endif
-                                @else
-                                    — not started
-                                @endif
-                            </p>
-                        </div>
-                        <a href="{{ route('lessons.play', $lesson->code) }}"
-                           class="inline-flex min-h-11 items-center rounded-md border-2 border-slate-800 px-4 py-2 text-sm font-semibold">
-                            {{ $attempt ? ($row['read_only'] ? 'Review' : 'Resume') : 'Start' }}
-                        </a>
-                    </li>
-                @endforeach
-            </ul>
+                                    @if (! $row['available'] && $row['available_at'])
+                                        <span class="mt-1 block text-sm font-normal">
+                                            {{ __('home.available_at', ['when' => $row['available_at']->toDayDateTimeString()]) }}
+                                        </span>
+                                    @endif
+                                </th>
+                                <td class="px-3 py-3">{{ $row['status_label'] }}</td>
+                                <td class="px-3 py-3">
+                                    {{ $row['due_at'] ? __('home.due_at', ['when' => $row['due_at']->toDayDateTimeString()]) : '—' }}
+                                </td>
+                                <td class="px-3 py-3">
+                                    @if ($row['url'] && $row['action_label'])
+                                        <a href="{{ $row['url'] }}"
+                                           class="inline-flex min-h-11 items-center rounded-md border-2 border-slate-800 px-4 py-2 text-sm font-semibold">
+                                            {{ $row['action_label'] }}
+                                        </a>
+                                    @else
+                                        —
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            @endif
+
+            <h2 class="mt-10 text-xl font-semibold">{{ __('home.practice_intro') }}</h2>
+            @if (count($practice) === 0)
+                <p class="mt-3 text-slate-600">{{ __('home.no_practice') }}</p>
+            @else
+                <ul class="mt-3 space-y-3">
+                    @foreach ($practice as $row)
+                        <li class="flex flex-wrap items-center justify-between gap-3 border border-slate-300 bg-white px-4 py-3">
+                            <div>
+                                <p class="font-semibold">{{ $row['lesson']->title }}</p>
+                                <p class="text-sm text-slate-600">{{ $row['lesson']->code }} — {{ $row['status_label'] }}</p>
+                            </div>
+                            <a href="{{ $row['url'] }}"
+                               class="inline-flex min-h-11 items-center rounded-md border-2 border-slate-800 px-4 py-2 text-sm font-semibold">
+                                {{ $row['action'] === 'resume' ? __('home.action_resume') : __('home.action_view') }}
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
         @endif
     </div>
 </body>

@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'title' => 'Home',
+    'student_intro' => 'Your assignments',
+    'staff_intro' => 'Your classes',
+    'practice_intro' => 'Practice (not assigned)',
+    'no_assignments' => 'No class assignments yet.',
+    'no_practice' => 'No practice attempts yet.',
+    'no_classes' => 'No classes yet.',
+    'due_at' => 'Due :when',
+    'available_at' => 'Opens :when',
+    'status_unavailable' => 'Not yet available',
+    'status_not_started' => 'Not started',
+    'status_in_progress' => 'In progress',
+    'status_completed' => 'Completed',
+    'status_superseded' => 'Superseded',
+    'status_withdrawn' => 'Membership inactive',
+    'action_start' => 'Start',
+    'action_resume' => 'Resume',
+    'action_view' => 'View',
+    'withdrawn_reason' => 'You are no longer an active member of this class, so you cannot start or resume this assignment.',
+    'view_classes' => 'View classes',
+    'blocked_attempts' => 'Blocked attempts',
+    'class_label' => 'Class: :name',
+];

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Blocks\BlockTypeRegistry;
 use App\Enums\AttemptStatus;
+use App\Models\AttemptReopen;
 use App\Models\AttemptRetryGrant;
 use App\Models\Lesson;
 use App\Models\LessonAssignment;
@@ -16,6 +17,7 @@ use App\Support\StudentGradingResult;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -241,6 +243,69 @@ class AttemptService
             'reason' => $reason,
             'created_at' => now(),
         ]);
+    }
+
+    /**
+     * Staff: reopen a completed attempt in place. Preserves current_page_id.
+     * Refused for superseded attempts and when another in_progress already
+     * exists in the same scope.
+     */
+    public function reopenForStaff(
+        LessonAttempt $attempt,
+        User $actor,
+        ?string $reason = null,
+    ): LessonAttempt {
+        return DB::transaction(function () use ($attempt, $actor, $reason) {
+            /** @var LessonAttempt $locked */
+            $locked = LessonAttempt::query()
+                ->whereKey($attempt->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status === AttemptStatus::Superseded) {
+                throw ValidationException::withMessages([
+                    'attempt' => __('staff.reopen_refused_superseded'),
+                ]);
+            }
+
+            if ($locked->status !== AttemptStatus::Completed) {
+                throw ValidationException::withMessages([
+                    'attempt' => __('staff.reopen_refused_not_completed'),
+                ]);
+            }
+
+            $conflict = LessonAttempt::query()
+                ->where('user_id', $locked->user_id)
+                ->where('status', AttemptStatus::InProgress)
+                ->whereKeyNot($locked->id)
+                ->when(
+                    $locked->lesson_assignment_id === null,
+                    fn ($q) => $q->where('lesson_id', $locked->lesson_id)->whereNull('lesson_assignment_id'),
+                    fn ($q) => $q->where('lesson_assignment_id', $locked->lesson_assignment_id),
+                )
+                ->exists();
+
+            if ($conflict) {
+                throw ValidationException::withMessages([
+                    'attempt' => __('staff.reopen_refused_in_progress'),
+                ]);
+            }
+
+            AttemptReopen::query()->create([
+                'lesson_attempt_id' => $locked->id,
+                'reopened_by_user_id' => $actor->id,
+                'previous_completed_at' => $locked->completed_at,
+                'reason' => $reason,
+                'created_at' => now(),
+            ]);
+
+            $locked->forceFill([
+                'status' => AttemptStatus::InProgress,
+                'completed_at' => null,
+            ])->save();
+
+            return $locked->fresh();
+        });
     }
 
     /**

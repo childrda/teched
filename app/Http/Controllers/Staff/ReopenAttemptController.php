@@ -10,11 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
-/**
- * Adds attempts for one block on one existing lesson attempt.
- * Authorization: LessonAttemptPolicy::intervene — exact assignment class.
- */
-class GrantRetriesController extends Controller
+class ReopenAttemptController extends Controller
 {
     public function __construct(private readonly AttemptService $attempts)
     {
@@ -25,21 +21,17 @@ class GrantRetriesController extends Controller
         Gate::authorize('intervene', $attempt);
 
         $payload = $request->validate([
-            'block_id' => ['required', 'string', 'max:26'],
-            'additional_attempts' => ['required', 'integer', 'min:1', 'max:20'],
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $this->attempts->grantRetries(
+        $this->attempts->reopenForStaff(
             $attempt,
-            $payload['block_id'],
-            (int) $payload['additional_attempts'],
             Auth::user(),
             $payload['reason'] ?? null,
         );
 
         return redirect()
             ->route('staff.attempts.show', $attempt)
-            ->with('status', __('staff.grant_recorded'));
+            ->with('status', __('staff.reopen_recorded'));
     }
 }

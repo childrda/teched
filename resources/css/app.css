@@ -99,6 +99,10 @@
         @apply md:col-span-2;
     }
 
+    /* Sticky so the bank stays reachable; capped so it cannot eat the viewport.
+       In the matching two-column layout it sits beside targets, so it does not
+       cover drop buttons. In a single column, scroll-margin on slots/hotspots
+       keeps focused or scrolled-to targets clear of this strip. */
     .placement-bank {
         @apply sticky z-10 -mx-1 space-y-0 rounded-md bg-white px-1;
         top: var(--placement-sticky-top);

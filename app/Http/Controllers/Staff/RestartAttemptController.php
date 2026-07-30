@@ -22,10 +22,10 @@ class RestartAttemptController extends Controller
     {
         Gate::authorize('intervene', $attempt);
 
-        $this->attempts->restartForStaff($attempt, Auth::user());
+        $fresh = $this->attempts->restartForStaff($attempt, Auth::user());
 
         return redirect()
-            ->route('staff.blocked-attempts')
-            ->with('status', 'Lesson restarted for the student.');
+            ->route('staff.attempts.show', $fresh)
+            ->with('status', __('staff.restart_recorded'));
     }
 }

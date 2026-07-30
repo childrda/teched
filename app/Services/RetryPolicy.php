@@ -18,10 +18,12 @@ class RetryPolicy
      */
     public function counts(LessonAttempt $attempt, string $blockId, ?array $grading): array
     {
-        $used = (int) BlockSubmission::query()
-            ->where('lesson_attempt_id', $attempt->id)
-            ->where('block_id', $blockId)
-            ->count();
+        $used = $attempt->relationLoaded('blockSubmissions')
+            ? $attempt->blockSubmissions->where('block_id', $blockId)->count()
+            : (int) BlockSubmission::query()
+                ->where('lesson_attempt_id', $attempt->id)
+                ->where('block_id', $blockId)
+                ->count();
 
         $allowed = $this->allowed($attempt, $blockId, $grading);
 
@@ -74,10 +76,12 @@ class RetryPolicy
             return null;
         }
 
-        $grants = (int) AttemptRetryGrant::query()
-            ->where('lesson_attempt_id', $attempt->id)
-            ->where('block_id', $blockId)
-            ->sum('additional_attempts');
+        $grants = $attempt->relationLoaded('retryGrants')
+            ? (int) $attempt->retryGrants->where('block_id', $blockId)->sum('additional_attempts')
+            : (int) AttemptRetryGrant::query()
+                ->where('lesson_attempt_id', $attempt->id)
+                ->where('block_id', $blockId)
+                ->sum('additional_attempts');
 
         return max(1, (int) $base) + $grants;
     }

@@ -62,6 +62,11 @@ class LessonAttempt extends Model
         return $this->hasMany(AttemptRetryGrant::class);
     }
 
+    public function reopens(): HasMany
+    {
+        return $this->hasMany(AttemptReopen::class);
+    }
+
     public function supersededBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'superseded_by_user_id');
@@ -87,9 +92,11 @@ class LessonAttempt extends Model
      * must go through this scope so unauthorized rows never leave SQL.
      *
      * - admin: all attempts
-     * - teacher: assigned attempts whose assignment's class they actively teach
+     * - teacher: their own attempts, plus assigned attempts whose assignment's
+     *   class they actively teach (matches LessonAttemptPolicy::view)
      * - student: their own attempts only
-     * - unassigned attempts: owning student and admins only
+     * - unassigned attempts: owning student and admins only (teachers see
+     *   their own practice; not other students' unassigned work)
      */
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
@@ -98,14 +105,20 @@ class LessonAttempt extends Model
         }
 
         if ($user->role === UserRole::Teacher) {
-            return $query
-                ->whereNotNull('lesson_attempts.lesson_assignment_id')
-                ->whereHas('assignment.schoolClass.memberships', function (Builder $memberships) use ($user) {
-                    $memberships
-                        ->where('user_id', $user->id)
-                        ->where('role', ClassRole::Teacher->value)
-                        ->whereNull('withdrawn_at');
-                });
+            return $query->where(function (Builder $scope) use ($user) {
+                $scope
+                    ->where('lesson_attempts.user_id', $user->id)
+                    ->orWhere(function (Builder $taught) use ($user) {
+                        $taught
+                            ->whereNotNull('lesson_attempts.lesson_assignment_id')
+                            ->whereHas('assignment.schoolClass.memberships', function (Builder $memberships) use ($user) {
+                                $memberships
+                                    ->where('user_id', $user->id)
+                                    ->where('role', ClassRole::Teacher->value)
+                                    ->whereNull('withdrawn_at');
+                            });
+                    });
+            });
         }
 
         // Students (and any other non-staff role) see only their own.

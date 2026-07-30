@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\ClassRole;
+use App\Enums\UserRole;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -55,5 +58,32 @@ class LessonAssignment extends Model
         $at = $at ?? now();
 
         return $this->available_at->lte($at);
+    }
+
+    /**
+     * List-query companion to LessonAssignmentPolicy.
+     * Teachers: assignments in classes they actively teach.
+     * Students: assignments in classes they belong to (including withdrawn).
+     */
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->role === UserRole::Admin) {
+            return $query;
+        }
+
+        if ($user->role === UserRole::Teacher) {
+            return $query->whereHas('schoolClass.memberships', function (Builder $memberships) use ($user) {
+                $memberships
+                    ->where('user_id', $user->id)
+                    ->where('role', ClassRole::Teacher->value)
+                    ->whereNull('withdrawn_at');
+            });
+        }
+
+        return $query->whereHas('schoolClass.memberships', function (Builder $memberships) use ($user) {
+            $memberships
+                ->where('user_id', $user->id)
+                ->where('role', ClassRole::Student->value);
+        });
     }
 }
