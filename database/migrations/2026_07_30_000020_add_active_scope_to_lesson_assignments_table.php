@@ -9,40 +9,46 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Before constraining active uniqueness, refuse if pre-existing
-        // duplicates would make the index fail with an opaque error. Do not
-        // auto-archive — a migration cannot know which row to keep.
-        $duplicates = DB::table('lesson_assignments')
-            ->select(
-                'school_class_id',
-                'lesson_id',
-                DB::raw('GROUP_CONCAT(id ORDER BY id) as ids'),
-                DB::raw('COUNT(*) as c')
-            )
-            ->groupBy('school_class_id', 'lesson_id')
-            ->having('c', '>', 1)
-            ->get();
+        $driver = Schema::getConnection()->getDriverName();
+        $isMysql = in_array($driver, ['mysql', 'mariadb'], true);
 
-        if ($duplicates->isNotEmpty()) {
-            $details = $duplicates
-                ->map(fn ($row) => "class {$row->school_class_id} / lesson {$row->lesson_id}: assignment ids [{$row->ids}]")
-                ->implode('; ');
+        // MySQL/MariaDB only — SQLite relies on LessonAssignmentService
+        // application-level checks for one-active uniqueness (same pattern as
+        // in_progress_scope). GROUP_CONCAT is MySQL syntax and only matters
+        // when we are about to add the unique index below.
+        if ($isMysql) {
+            // Before constraining active uniqueness, refuse if pre-existing
+            // duplicates would make the index fail with an opaque error. Do
+            // not auto-archive — a migration cannot know which row to keep.
+            // Runs before archived_at exists, so every row is "active."
+            $duplicates = DB::table('lesson_assignments')
+                ->select(
+                    'school_class_id',
+                    'lesson_id',
+                    DB::raw('GROUP_CONCAT(id ORDER BY id) as ids'),
+                    DB::raw('COUNT(*) as c')
+                )
+                ->groupBy('school_class_id', 'lesson_id')
+                ->having('c', '>', 1)
+                ->get();
 
-            throw new \RuntimeException(
-                'Cannot add lesson_assignments_one_active: duplicate active assignments exist. '
-                .'Archive or delete extras before migrating. Conflicts: '.$details
-            );
+            if ($duplicates->isNotEmpty()) {
+                $details = $duplicates
+                    ->map(fn ($row) => "class {$row->school_class_id} / lesson {$row->lesson_id}: assignment ids [{$row->ids}]")
+                    ->implode('; ');
+
+                throw new \RuntimeException(
+                    'Cannot add lesson_assignments_one_active: duplicate active assignments exist. '
+                    .'Archive or delete extras before migrating. Conflicts: '.$details
+                );
+            }
         }
 
         Schema::table('lesson_assignments', function (Blueprint $table) {
             $table->timestamp('archived_at')->nullable()->after('settings');
         });
 
-        $driver = Schema::getConnection()->getDriverName();
-
-        // MySQL/MariaDB only — SQLite relies on LessonAssignmentService
-        // application-level checks, same pattern as in_progress_scope.
-        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+        if ($isMysql) {
             Schema::table('lesson_assignments', function (Blueprint $table) {
                 // Scope keys are '{classId}:{lessonId}' over bigint FKs — well
                 // under 64 chars (manifest ULIDs are not used here).
