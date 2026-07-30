@@ -2,7 +2,6 @@
 
 use App\Enums\UserRole;
 use App\Exceptions\AuthoringValidationException;
-use App\Filament\LessonBlocks\BlockFormFactory;
 use App\Filament\Resources\Lessons\Pages\CreateLesson;
 use App\Filament\Resources\Lessons\Pages\EditLesson;
 use App\Filament\Resources\Lessons\Pages\ListLessons;
@@ -54,7 +53,9 @@ function phase5bOwnedLesson(User $owner): Lesson
 
 test('filament list create and edit pages render', function () {
     $teacher = asTeacher();
-    $lesson = phase5bOwnedLesson($teacher);
+    // Every registered type with populated defaultConfig — Select option
+    // closures (matching / quiz / image_labeling) must resolve without TypeError.
+    $lesson = createOwnedLessonWithAllBlockTypes($teacher);
 
     Livewire::actingAs($teacher)
         ->test(ListLessons::class)
@@ -64,28 +65,53 @@ test('filament list create and edit pages render', function () {
         ->test(CreateLesson::class)
         ->assertSuccessful();
 
-    Livewire::actingAs($teacher)
+    $edit = Livewire::actingAs($teacher)
         ->test(EditLesson::class, ['record' => $lesson->getKey()])
         ->assertSuccessful();
+
+    // Avoid Livewire assertSee — failure dumps the full Filament HTML and
+    // hangs PHPUnit on Windows. Check needles with a short expect message.
+    $html = $edit->html();
+    foreach (['Term A', 'Correct answer', 'Label'] as $needle) {
+        expect(str_contains($html, $needle))->toBeTrue("EditLesson HTML missing \"{$needle}\"");
+    }
 });
 
-test('block builder schemas cover every registered type without construction errors', function () {
-    $registry = app(\App\Blocks\BlockTypeRegistry::class);
-    $factory = app(BlockFormFactory::class);
+test('filament edit page renders the seeded WEL lesson with every interaction type', function () {
+    $this->seed(WeldingLessonSeeder::class);
+    $lesson = Lesson::query()->where('code', 'WEL-6.1.1')->firstOrFail();
+    $teacher = User::query()->findOrFail($lesson->created_by_user_id);
 
-    foreach ($registry->all() as $key => $type) {
-        $schema = $factory->schemaFor($key);
-        $components = $schema->filamentSchema();
-        expect($components)->toBeArray()->not->toBeEmpty();
-        // Instantiate Builder blocks so Filament construction errors surface.
-        $block = \Filament\Forms\Components\Builder\Block::make($key)
-            ->label($type->label())
-            ->schema([
-                \Filament\Forms\Components\Hidden::make('block_id'),
-                ...$components,
-            ]);
-        expect($block->getName())->toBe($key);
+    $edit = Livewire::actingAs($teacher)
+        ->test(EditLesson::class, ['record' => $lesson->getKey()])
+        ->assertSuccessful();
+
+    $html = $edit->html();
+    foreach (['Electrode', 'Weld Pool'] as $needle) {
+        expect(str_contains($html, $needle))->toBeTrue("WEL EditLesson HTML missing \"{$needle}\"");
     }
+});
+
+test('app/Filament never imports the Filament 3/4 Forms Get or Set utilities', function () {
+    $root = app_path('Filament');
+    $hits = [];
+
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root)) as $file) {
+        if (! $file->isFile() || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $contents = file_get_contents($file->getPathname());
+        if (str_contains($contents, 'Filament\\Forms\\Get')
+            || str_contains($contents, 'Filament\\Forms\\Set')) {
+            $hits[] = str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname());
+        }
+    }
+
+    expect($hits)->toBeEmpty(
+        'Filament 5 Get/Set live in Filament\\Schemas\\Components\\Utilities. Offending imports: '
+        .implode(', ', $hits)
+    );
 });
 
 test('user seeder creates a permanent admin account', function () {

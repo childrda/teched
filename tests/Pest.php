@@ -239,5 +239,21 @@ function createLessonWithAllBlockTypes(): Lesson
         ]);
     }
 
-    return $lesson->fresh();
+    return $lesson->fresh(['pages.blocks']);
+}
+
+/**
+ * Like createLessonWithAllBlockTypes(), but owned by $owner so Filament
+ * LessonPolicy / SQL scoping allow EditLesson to open it. Populated defaults
+ * force Select option closures (matching / quiz / image_labeling) to resolve.
+ */
+function createOwnedLessonWithAllBlockTypes(User $owner): Lesson
+{
+    $lesson = createLessonWithAllBlockTypes();
+    $lesson->forceFill([
+        'created_by_user_id' => $owner->getKey(),
+        'updated_by' => $owner->getKey(),
+    ])->save();
+
+    return $lesson->fresh(['pages.blocks']);
 }
