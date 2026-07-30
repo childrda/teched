@@ -19,6 +19,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Livewire\Attributes\Locked;
 
 class PagesRelationManager extends RelationManager
 {
@@ -27,6 +28,21 @@ class PagesRelationManager extends RelationManager
     protected static ?string $relatedResource = LessonPageResource::class;
 
     protected static ?string $title = 'Pages';
+
+    /**
+     * lessons.updated_at known when this manager mounted (or after the last
+     * successful table mutation). Must not be re-read via fresh() before a
+     * write — that defeats the optimistic lock.
+     */
+    #[Locked]
+    public ?string $lessonRevision = null;
+
+    public function mount(): void
+    {
+        parent::mount();
+
+        $this->lessonRevision ??= $this->getOwnerRecord()->updated_at?->toISOString();
+    }
 
     public function isReadOnly(): bool
     {
@@ -79,26 +95,23 @@ class PagesRelationManager extends RelationManager
                     ->visible(fn (): bool => Gate::allows('update', $this->getOwnerRecord()))
                     ->action(function (): void {
                         /** @var Lesson $lesson */
-                        $lesson = $this->getOwnerRecord()->fresh();
+                        $lesson = $this->getOwnerRecord();
 
                         try {
                             $page = app(LessonAuthoringService::class)->createPage(
                                 $lesson,
                                 Auth::user(),
-                                $lesson->updated_at?->toISOString(),
+                                $this->heldLessonRevision(),
                             );
+
+                            $this->rememberLessonRevision($page->lesson ?? $lesson->fresh());
 
                             $this->redirect(LessonPageResource::getUrl('edit', [
                                 'lesson' => $lesson,
                                 'record' => $page,
                             ]));
                         } catch (StaleLessonEditException $e) {
-                            Notification::make()
-                                ->title('Stale edit')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->persistent()
-                                ->send();
+                            $this->notifyStale($e);
                         }
                     }),
                 Action::make('copyPageInto')
@@ -127,26 +140,20 @@ class PagesRelationManager extends RelationManager
                         $source = LessonPage::query()->with('lesson')->findOrFail($data['source_page_id']);
                         Gate::authorize('view', $source->lesson);
                         /** @var Lesson $lesson */
-                        $lesson = $this->getOwnerRecord()->fresh();
+                        $lesson = $this->getOwnerRecord();
                         Gate::authorize('update', $lesson);
 
                         try {
-                            app(LessonAuthoringService::class)->copyPageInto(
+                            $copy = app(LessonAuthoringService::class)->copyPageInto(
                                 $source,
                                 $lesson,
                                 Auth::user(),
-                                $lesson->updated_at?->toISOString(),
+                                $this->heldLessonRevision(),
                             );
+                            $this->rememberLessonRevision($copy->lesson ?? $lesson->fresh());
                             Notification::make()->title('Page copied into lesson')->success()->send();
                         } catch (StaleLessonEditException|AuthoringValidationException $e) {
-                            $body = $e instanceof AuthoringValidationException
-                                ? implode("\n", $e->errors)
-                                : $e->getMessage();
-                            Notification::make()
-                                ->title('Copy failed')
-                                ->body($body)
-                                ->danger()
-                                ->send();
+                            $this->notifyMutationFailure('Copy failed', $e);
                         }
                     }),
             ])
@@ -162,25 +169,19 @@ class PagesRelationManager extends RelationManager
                     ->visible(fn (): bool => Gate::allows('update', $this->getOwnerRecord()))
                     ->action(function (LessonPage $record): void {
                         /** @var Lesson $lesson */
-                        $lesson = $this->getOwnerRecord()->fresh();
+                        $lesson = $this->getOwnerRecord();
 
                         try {
-                            app(LessonAuthoringService::class)->duplicatePage(
+                            $copy = app(LessonAuthoringService::class)->duplicatePage(
                                 $lesson,
                                 $record,
                                 Auth::user(),
-                                $lesson->updated_at?->toISOString(),
+                                $this->heldLessonRevision(),
                             );
+                            $this->rememberLessonRevision($copy->lesson ?? $lesson->fresh());
                             Notification::make()->title('Page duplicated')->success()->send();
                         } catch (StaleLessonEditException|AuthoringValidationException $e) {
-                            $body = $e instanceof AuthoringValidationException
-                                ? implode("\n", $e->errors)
-                                : $e->getMessage();
-                            Notification::make()
-                                ->title('Duplicate failed')
-                                ->body($body)
-                                ->danger()
-                                ->send();
+                            $this->notifyMutationFailure('Duplicate failed', $e);
                         }
                     }),
                 Action::make('delete')
@@ -192,23 +193,19 @@ class PagesRelationManager extends RelationManager
                     ->visible(fn (): bool => Gate::allows('update', $this->getOwnerRecord()))
                     ->action(function (LessonPage $record): void {
                         /** @var Lesson $lesson */
-                        $lesson = $this->getOwnerRecord()->fresh();
+                        $lesson = $this->getOwnerRecord();
 
                         try {
                             app(LessonAuthoringService::class)->deletePage(
                                 $lesson,
                                 $record,
                                 Auth::user(),
-                                $lesson->updated_at?->toISOString(),
+                                $this->heldLessonRevision(),
                             );
+                            $this->rememberLessonRevision($lesson->fresh());
                             Notification::make()->title('Page deleted')->success()->send();
                         } catch (StaleLessonEditException $e) {
-                            Notification::make()
-                                ->title('Stale edit')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->persistent()
-                                ->send();
+                            $this->notifyStale($e);
                         }
                     }),
             ])
@@ -227,7 +224,7 @@ class PagesRelationManager extends RelationManager
         }
 
         /** @var Lesson $lesson */
-        $lesson = $this->getOwnerRecord()->fresh();
+        $lesson = $this->getOwnerRecord();
         Gate::authorize('update', $lesson);
 
         $orderedPageIds = LessonPage::query()
@@ -240,24 +237,66 @@ class PagesRelationManager extends RelationManager
             ->all();
 
         try {
-            app(LessonAuthoringService::class)->reorderPages(
+            $updated = app(LessonAuthoringService::class)->reorderPages(
                 $lesson,
                 $orderedPageIds,
                 Auth::user(),
-                $lesson->updated_at?->toISOString(),
+                $this->heldLessonRevision(),
             );
+            $this->rememberLessonRevision($updated);
         } catch (StaleLessonEditException $e) {
-            Notification::make()
-                ->title('Stale edit')
-                ->body($e->getMessage())
-                ->danger()
-                ->persistent()
-                ->send();
+            $this->notifyStale($e);
         }
     }
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return Gate::allows('view', $ownerRecord) || Gate::allows('update', $ownerRecord);
+    }
+
+    /**
+     * Revision the teacher was holding when this table loaded — not a fresh()
+     * re-read of the DB, which would always match and defeat the lock.
+     */
+    private function heldLessonRevision(): string
+    {
+        $token = $this->lessonRevision ?? $this->getOwnerRecord()->updated_at?->toISOString();
+
+        if ($token === null || $token === '') {
+            throw StaleLessonEditException::make();
+        }
+
+        return $token;
+    }
+
+    private function rememberLessonRevision(Lesson $lesson): void
+    {
+        $this->ownerRecord = $lesson;
+        $this->lessonRevision = $lesson->updated_at?->toISOString();
+    }
+
+    private function notifyStale(StaleLessonEditException $e): void
+    {
+        Notification::make()
+            ->title('Stale edit')
+            ->body($e->getMessage())
+            ->danger()
+            ->persistent()
+            ->send();
+    }
+
+    private function notifyMutationFailure(string $title, StaleLessonEditException|AuthoringValidationException $e): void
+    {
+        if ($e instanceof StaleLessonEditException) {
+            $this->notifyStale($e);
+
+            return;
+        }
+
+        Notification::make()
+            ->title($title)
+            ->body(implode("\n", $e->errors))
+            ->danger()
+            ->send();
     }
 }

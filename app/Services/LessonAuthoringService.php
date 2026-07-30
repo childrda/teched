@@ -154,12 +154,14 @@ class LessonAuthoringService
      * lessons.has_unpublished_changes is a flag, not a concurrency token, and
      * is toggled without changing lessons.updated_at (via markUnpublishedChanges).
      */
-    public function createPage(Lesson $lesson, User $user, ?string $expectedUpdatedAt = null, array $attributes = []): LessonPage
+    public function createPage(Lesson $lesson, User $user, string $expectedUpdatedAt, array $attributes = []): LessonPage
     {
         return DB::transaction(function () use ($lesson, $user, $expectedUpdatedAt, $attributes) {
             /** @var Lesson $locked */
             $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
-            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+            // Callers must pass the revision they were holding — never fall back
+            // to the locked row's own updated_at (that always compares equal).
+            $this->assertLessonRevision($locked, $expectedUpdatedAt);
 
             $pageId = is_string($attributes['page_id'] ?? null) && $attributes['page_id'] !== ''
                 ? $attributes['page_id']
@@ -184,9 +186,7 @@ class LessonAuthoringService
                 ], is_array($attributes['settings'] ?? null) ? $attributes['settings'] : []),
             ])->save();
 
-            // Bump lessons.updated_at — page graph changed.
-            $locked->forceFill(['updated_by' => $user->getKey()])->save();
-            $locked->markUnpublishedChanges();
+            $this->bumpLessonRevision($locked, $user);
 
             return $page->fresh('blocks');
         });
@@ -260,7 +260,7 @@ class LessonAuthoringService
      * Concurrency token: lessons.updated_at — deleting a page changes the
      * page graph.
      */
-    public function deletePage(Lesson $lesson, LessonPage $page, User $user, ?string $expectedUpdatedAt = null): void
+    public function deletePage(Lesson $lesson, LessonPage $page, User $user, string $expectedUpdatedAt): void
     {
         if ((int) $page->lesson_id !== (int) $lesson->getKey()) {
             throw AuthoringPayloadException::forbidden('lesson_id');
@@ -269,7 +269,7 @@ class LessonAuthoringService
         DB::transaction(function () use ($lesson, $page, $user, $expectedUpdatedAt) {
             /** @var Lesson $locked */
             $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
-            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt);
 
             /** @var LessonPage $lockedPage */
             $lockedPage = LessonPage::query()
@@ -290,8 +290,7 @@ class LessonAuthoringService
                 LessonPage::reorderWithin($locked->fresh(), $remainingIds);
             }
 
-            $locked->forceFill(['updated_by' => $user->getKey()])->save();
-            $locked->markUnpublishedChanges();
+            $this->bumpLessonRevision($locked, $user);
         });
     }
 
@@ -303,17 +302,16 @@ class LessonAuthoringService
      *
      * @param  list<string>  $orderedPageIds
      */
-    public function reorderPages(Lesson $lesson, array $orderedPageIds, User $user, ?string $expectedUpdatedAt = null): Lesson
+    public function reorderPages(Lesson $lesson, array $orderedPageIds, User $user, string $expectedUpdatedAt): Lesson
     {
         return DB::transaction(function () use ($lesson, $orderedPageIds, $user, $expectedUpdatedAt) {
             /** @var Lesson $locked */
             $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
-            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt);
 
             LessonPage::reorderWithin($locked, $orderedPageIds);
 
-            $locked->forceFill(['updated_by' => $user->getKey()])->save();
-            $locked->markUnpublishedChanges();
+            $this->bumpLessonRevision($locked, $user);
 
             return $locked->fresh(['pages.blocks']);
         });
@@ -324,7 +322,7 @@ class LessonAuthoringService
      *
      * Concurrency token: lessons.updated_at — duplication changes the page graph.
      */
-    public function duplicatePage(Lesson $lesson, LessonPage $sourcePage, User $user, ?string $expectedUpdatedAt = null): LessonPage
+    public function duplicatePage(Lesson $lesson, LessonPage $sourcePage, User $user, string $expectedUpdatedAt): LessonPage
     {
         if ((int) $sourcePage->lesson_id !== (int) $lesson->getKey()) {
             throw AuthoringPayloadException::forbidden('lesson_id');
@@ -333,12 +331,11 @@ class LessonAuthoringService
         return DB::transaction(function () use ($lesson, $sourcePage, $user, $expectedUpdatedAt) {
             /** @var Lesson $locked */
             $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
-            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt);
 
             $copy = $this->duplicator->duplicatePageWithin($locked, $sourcePage);
 
-            $locked->forceFill(['updated_by' => $user->getKey()])->save();
-            $locked->markUnpublishedChanges();
+            $this->bumpLessonRevision($locked, $user);
 
             return $copy->fresh('blocks');
         });
@@ -348,21 +345,37 @@ class LessonAuthoringService
      * Copy a page from any viewable lesson into $target (fresh identifiers).
      *
      * Concurrency token: lessons.updated_at — adding a page changes the page graph.
+     * Source lesson / page timestamps must not change.
      */
-    public function copyPageInto(LessonPage $sourcePage, Lesson $target, User $user, ?string $expectedUpdatedAt = null): LessonPage
+    public function copyPageInto(LessonPage $sourcePage, Lesson $target, User $user, string $expectedUpdatedAt): LessonPage
     {
         return DB::transaction(function () use ($sourcePage, $target, $user, $expectedUpdatedAt) {
             /** @var Lesson $locked */
             $locked = Lesson::query()->lockForUpdate()->findOrFail($target->getKey());
-            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt);
 
             $copy = $this->duplicator->copyPageInto($sourcePage, $locked);
 
-            $locked->forceFill(['updated_by' => $user->getKey()])->save();
-            $locked->markUnpublishedChanges();
+            $this->bumpLessonRevision($locked, $user);
 
             return $copy->fresh('blocks');
         });
+    }
+
+    /**
+     * Always advance lessons.updated_at for page-graph ops. forceFill(updated_by)
+     * alone is a no-op when the same teacher writes again, and Eloquent would
+     * skip touching updated_at — defeating optimistic locks and tests that
+     * travel time.
+     */
+    private function bumpLessonRevision(Lesson $lesson, User $user): void
+    {
+        $lesson->forceFill([
+            'updated_by' => $user->getKey(),
+            'updated_at' => now(),
+        ])->save();
+
+        $lesson->markUnpublishedChanges();
     }
 
     /**

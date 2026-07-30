@@ -163,6 +163,99 @@ test('reorder pages preserves every page_id and block_id', function () {
         ->toBe(collect([$blockA, $blockB])->sort()->values()->all());
 });
 
+test('copyPageInto bumps target lesson only and remints ids; source is untouched', function () {
+    $teacher = asTeacher();
+    $service = app(LessonAuthoringService::class);
+    $sourcePageId = (string) Str::ulid();
+    $sourceBlockId = (string) Str::ulid();
+
+    $sourceLesson = $service->create([
+        'code' => 'P5C-COPY-SRC',
+        'title' => 'Source lesson',
+        'settings' => Lesson::DEFAULT_SETTINGS,
+        'pages' => [
+            authoringPagePayload('Source page', [richTextBlock($sourceBlockId)], $sourcePageId),
+        ],
+    ], $teacher);
+
+    $targetLesson = $service->create([
+        'code' => 'P5C-COPY-TGT',
+        'title' => 'Target lesson',
+        'settings' => Lesson::DEFAULT_SETTINGS,
+        'pages' => [
+            authoringPagePayload('Already here', [richTextBlock()]),
+        ],
+    ], $teacher);
+
+    $sourcePage = LessonPage::query()->where('page_id', $sourcePageId)->firstOrFail();
+    $sourceLessonUpdatedAt = DB::table('lessons')->where('id', $sourceLesson->id)->value('updated_at');
+    $sourcePageUpdatedAt = DB::table('lesson_pages')->where('id', $sourcePage->id)->value('updated_at');
+    $targetRevision = $targetLesson->fresh()->updated_at->toISOString();
+    $targetUpdatedAtBefore = DB::table('lessons')->where('id', $targetLesson->id)->value('updated_at');
+    $targetPageCount = $targetLesson->pages()->count();
+
+    $this->travel(2)->seconds();
+
+    $copy = $service->copyPageInto($sourcePage, $targetLesson->fresh(), $teacher, $targetRevision);
+
+    expect(DB::table('lessons')->where('id', $sourceLesson->id)->value('updated_at'))
+        ->toBe($sourceLessonUpdatedAt, 'source lesson updated_at must not change')
+        ->and(DB::table('lesson_pages')->where('id', $sourcePage->id)->value('updated_at'))
+        ->toBe($sourcePageUpdatedAt, 'source page updated_at must not change')
+        ->and(DB::table('lessons')->where('id', $targetLesson->id)->value('updated_at'))
+        ->not->toBe($targetUpdatedAtBefore, 'target lesson updated_at must bump')
+        ->and($targetLesson->fresh()->pages()->count())->toBe($targetPageCount + 1)
+        ->and($copy->page_id)->not->toBe($sourcePageId)
+        ->and($copy->blocks->first()->block_id)->not->toBe($sourceBlockId)
+        ->and(LessonPage::query()->where('page_id', $sourcePageId)->exists())->toBeTrue()
+        ->and(LessonBlock::query()->where('block_id', $sourceBlockId)->exists())->toBeTrue();
+
+    // Held (stale) revision must fail — no self-fallback on the locked row.
+    expect(fn () => $service->copyPageInto(
+        $sourcePage->fresh(),
+        $targetLesson->fresh(),
+        $teacher,
+        $targetRevision,
+    ))->toThrow(StaleLessonEditException::class);
+});
+
+test('pages table holds a mount-time lesson revision and rejects concurrent graph edits', function () {
+    $teacher = asTeacher();
+    $service = app(LessonAuthoringService::class);
+
+    $lesson = $service->create([
+        'code' => 'P5C-HELD-1',
+        'title' => 'Held revision',
+        'settings' => Lesson::DEFAULT_SETTINGS,
+        'pages' => [authoringPagePayload('P', [richTextBlock()])],
+    ], $teacher);
+
+    $held = $lesson->fresh()->updated_at->toISOString();
+
+    $manager = Livewire::actingAs($teacher)
+        ->test(PagesRelationManager::class, [
+            'ownerRecord' => $lesson,
+            'pageClass' => EditLesson::class,
+        ]);
+
+    // Mount captures the revision the browser is holding — not a later fresh().
+    expect($manager->get('lessonRevision'))->toBe($held);
+
+    $this->travel(2)->seconds();
+    $service->createPage($lesson->fresh(), $teacher, $held, ['title' => 'Concurrent add']);
+
+    // Table actions pass lessonRevision into the service. A fresh() of the DB
+    // would succeed here; the held token must not.
+    expect($manager->get('lessonRevision'))->toBe($held)
+        ->and(fn () => $service->createPage(
+            $lesson->fresh(),
+            $teacher,
+            $manager->get('lessonRevision'),
+        ))->toThrow(StaleLessonEditException::class);
+
+    expect($lesson->fresh()->pages()->count())->toBe(2);
+});
+
 test('duplicating regenerates identifiers for the duplicate only', function () {
     $teacher = asTeacher();
     $service = app(LessonAuthoringService::class);
