@@ -8,12 +8,11 @@ use App\Services\AttemptService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Adds attempts for one block on one existing lesson attempt.
- *
- * AUTHORIZATION HOLE (intentional until 4A): any teacher/admin may grant
- * retries on any attempt — no roster scope yet. See BlockedAttemptsController.
+ * Authorization: LessonAttemptPolicy::intervene — exact assignment class.
  */
 class GrantRetriesController extends Controller
 {
@@ -23,6 +22,8 @@ class GrantRetriesController extends Controller
 
     public function __invoke(Request $request, LessonAttempt $attempt): RedirectResponse
     {
+        Gate::authorize('intervene', $attempt);
+
         $payload = $request->validate([
             'block_id' => ['required', 'string', 'max:26'],
             'additional_attempts' => ['required', 'integer', 'min:1', 'max:20'],

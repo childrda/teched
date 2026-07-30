@@ -4,16 +4,13 @@ namespace App\Http\Controllers\Staff;
 
 use App\Http\Controllers\Controller;
 use App\Services\BlockedAttemptFinder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 /**
  * Minimal staff surface for students stuck on a gradable block.
- *
- * AUTHORIZATION HOLE (intentional until 4A): there is no roster yet, so any
- * teacher or admin who reaches this page can act on any student's attempt.
- * That is acceptable only because 4A introduces classes, memberships, and
- * visibility rules that scope staff actions properly. Do not widen this
- * surface before those rules exist.
+ * Rows come from LessonAttempt::visibleTo() so unauthorized attempts never
+ * leave SQL — a teacher must not learn that another teacher's student is stuck.
  */
 class BlockedAttemptsController extends Controller
 {
@@ -24,7 +21,7 @@ class BlockedAttemptsController extends Controller
     public function __invoke(): View
     {
         return view('staff.blocked-attempts', [
-            'rows' => $this->finder->all(),
+            'rows' => $this->finder->forUser(Auth::user()),
         ]);
     }
 }

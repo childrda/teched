@@ -121,6 +121,27 @@ test('allow_retry false permits exactly one submission even when max_attempts is
     expect(BlockSubmission::query()->where('block_id', $quiz['block_id'])->count())->toBe(1);
 });
 
+test('a grant on an allow_retry false block permits exactly one more submission', function () {
+    [$lesson, $attempt, $quiz, $token] = publishGradableQuiz([
+        'allow_retry' => false,
+        'max_attempts' => 5,
+    ]);
+
+    gradeQuiz($lesson, $quiz['block_id'], $token, 'b')->assertOk();
+    gradeQuiz($lesson, $quiz['block_id'], $token, 'a')->assertStatus(422);
+
+    $teacher = User::factory()->create();
+    $teacher->forceFill(['role' => App\Enums\UserRole::Teacher])->save();
+    app(AttemptService::class)->grantRetries($attempt, $quiz['block_id'], 1, $teacher);
+
+    gradeQuiz($lesson, $quiz['block_id'], $token, 'a')
+        ->assertOk()
+        ->assertJsonPath('attempts.used', 2)
+        ->assertJsonPath('attempts.allowed', 2);
+
+    gradeQuiz($lesson, $quiz['block_id'], $token, 'a')->assertStatus(422);
+});
+
 test('null max_attempts permits many submissions', function () {
     [$lesson, , $quiz, $token] = publishGradableQuiz([
         'max_attempts' => null,
@@ -289,10 +310,41 @@ test('resume payload uses the envelope and respects record_first_attempt', funct
         ->and($entry2['latest_result']['result']['passed'])->toBeTrue();
 });
 
-test('students get 403 on staff routes while teachers can grant and restart', function () {
+test('students get 403 on staff routes while rostered teachers can grant and restart', function () {
     [$lesson, $attempt, $quiz] = publishGradableQuiz(['max_attempts' => 1]);
     gradeQuiz($lesson, $quiz['block_id'], app(StudentManifest::class)->forVersion($attempt->lessonVersion)['grading_token'], 'b')
         ->assertOk();
+
+    $student = $attempt->user;
+    $teacher = asTeacher();
+
+    $class = App\Models\SchoolClass::query()->create([
+        'name' => 'Staff test class',
+        'teacher_id' => $teacher->id,
+        'school_year' => '2026-2027',
+        'active' => true,
+    ]);
+    App\Models\ClassMembership::query()->create([
+        'school_class_id' => $class->id,
+        'user_id' => $teacher->id,
+        'role' => App\Enums\ClassRole::Teacher,
+        'joined_at' => now(),
+    ]);
+    App\Models\ClassMembership::query()->create([
+        'school_class_id' => $class->id,
+        'user_id' => $student->id,
+        'role' => App\Enums\ClassRole::Student,
+        'joined_at' => now(),
+    ]);
+    $assignment = App\Models\LessonAssignment::query()->create([
+        'school_class_id' => $class->id,
+        'lesson_id' => $lesson->id,
+        'lesson_version_id' => $attempt->lesson_version_id,
+        'assigned_by_user_id' => $teacher->id,
+        'available_at' => now()->subHour(),
+        'due_at' => now()->addWeek(),
+    ]);
+    $attempt->forceFill(['lesson_assignment_id' => $assignment->id])->save();
 
     asStudent();
     test()->get(route('staff.blocked-attempts'))->assertForbidden();
@@ -302,8 +354,8 @@ test('students get 403 on staff routes while teachers can grant and restart', fu
     ])->assertForbidden();
     test()->post(route('staff.attempts.restart', $attempt))->assertForbidden();
 
-    asTeacher();
-    test()->get(route('staff.blocked-attempts'))->assertOk()->assertSee($attempt->user->name, false);
+    asTeacher($teacher);
+    test()->get(route('staff.blocked-attempts'))->assertOk()->assertSee($student->name, false);
 
     test()->post(route('staff.attempts.grant-retries', $attempt), [
         'block_id' => $quiz['block_id'],
@@ -330,7 +382,7 @@ test('students get 403 on staff routes while teachers can grant and restart', fu
 
     $fresh = LessonAttempt::query()
         ->where('user_id', $old->user_id)
-        ->where('lesson_id', $old->lesson_id)
+        ->where('lesson_assignment_id', $assignment->id)
         ->where('status', AttemptStatus::InProgress)
         ->get();
 

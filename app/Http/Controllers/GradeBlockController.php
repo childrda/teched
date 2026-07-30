@@ -50,21 +50,42 @@ class GradeBlockController extends Controller
             abort(404);
         }
 
-        $attempt = $this->attempts->inProgressFor(Auth::user(), $lesson);
-
-        if ($attempt === null) {
-            abort(404);
-        }
-
         try {
             $tokenVersion = $this->gradingToken->resolve($request->input('version_token'), $lesson);
         } catch (InvalidGradingToken) {
             return $this->invalidToken();
         }
 
+        $attempt = $this->attempts->inProgressMatchingVersion(
+            Auth::user(),
+            $lesson,
+            $tokenVersion->id
+        );
+
+        if ($attempt === null) {
+            // An in-progress attempt on this lesson with a different pin means
+            // the client brought the wrong version_token — same 422 as before,
+            // not a 404 that implies "no attempt exists."
+            $otherPin = LessonAttempt::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('status', AttemptStatus::InProgress)
+                ->exists();
+
+            if ($otherPin) {
+                return $this->invalidToken();
+            }
+
+            abort(404);
+        }
+
         // The attempt is the authority; the token is a tamper-proof check.
         if ($tokenVersion->id !== $attempt->lesson_version_id) {
             return $this->invalidToken();
+        }
+
+        if (! Auth::user()->can('work', $attempt)) {
+            abort(403);
         }
 
         return DB::transaction(function () use ($request, $attempt, $blockId, $tokenVersion) {

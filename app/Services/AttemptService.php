@@ -6,7 +6,9 @@ use App\Blocks\BlockTypeRegistry;
 use App\Enums\AttemptStatus;
 use App\Models\AttemptRetryGrant;
 use App\Models\Lesson;
+use App\Models\LessonAssignment;
 use App\Models\LessonAttempt;
+use App\Models\LessonVersion;
 use App\Models\User;
 use App\Support\DatabaseErrors;
 use App\Support\ManifestBlockLookup;
@@ -17,11 +19,10 @@ use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * Resolves the attempt a student should see for a lesson: resume in-progress,
- * show the latest completed read-only, or create a new one pinned to the
- * currently available version.
+ * Resolves attempts for assigned and unassigned play. Scope is always
+ * explicit: never "whichever attempt for this lesson turns up first."
  *
- * Selection order (existingAttempt):
+ * Selection order within a scope:
  * 1. in_progress — active work, not read-only
  * 2. most recent completed — genuine read-only review
  * 3. null — never revive a superseded attempt as the student's view
@@ -38,40 +39,47 @@ class AttemptService
     }
 
     /**
-     * The attempt that already applies for this user and lesson, with no
-     * creation side effect. Shared by the player and the manifest API so
-     * the two cannot disagree about which pin applies.
+     * Unassigned attempts only (lesson_assignment_id IS NULL).
+     *
+     * @return array{attempt: LessonAttempt, read_only: bool}|null
+     */
+    public function existingUnassignedAttempt(User $user, Lesson $lesson): ?array
+    {
+        return $this->pickExisting(
+            LessonAttempt::query()
+                ->where('user_id', $user->id)
+                ->where('lesson_id', $lesson->id)
+                ->whereNull('lesson_assignment_id')
+        );
+    }
+
+    /**
+     * @deprecated Use existingUnassignedAttempt — kept as the unassigned alias
+     *             for call sites that mean "direct lesson play."
      *
      * @return array{attempt: LessonAttempt, read_only: bool}|null
      */
     public function existingAttempt(User $user, Lesson $lesson): ?array
     {
-        $inProgress = LessonAttempt::query()
-            ->where('user_id', $user->id)
-            ->where('lesson_id', $lesson->id)
-            ->where('status', AttemptStatus::InProgress)
-            ->first();
-
-        if ($inProgress !== null) {
-            return ['attempt' => $inProgress, 'read_only' => false];
-        }
-
-        $completed = LessonAttempt::query()
-            ->where('user_id', $user->id)
-            ->where('lesson_id', $lesson->id)
-            ->where('status', AttemptStatus::Completed)
-            ->orderByDesc('completed_at')
-            ->orderByDesc('id')
-            ->first();
-
-        if ($completed !== null) {
-            return ['attempt' => $completed, 'read_only' => true];
-        }
-
-        return null;
+        return $this->existingUnassignedAttempt($user, $lesson);
     }
 
     /**
+     * @return array{attempt: LessonAttempt, read_only: bool}|null
+     */
+    public function existingAssignmentAttempt(User $user, LessonAssignment $assignment): ?array
+    {
+        return $this->pickExisting(
+            LessonAttempt::query()
+                ->where('user_id', $user->id)
+                ->where('lesson_assignment_id', $assignment->id)
+        );
+    }
+
+    /**
+     * Direct /lessons/{code} play: create or resume an unassigned attempt
+     * pinned to the currently available version.
+     *
      * @return array{attempt: LessonAttempt, read_only: bool}|null
      */
     public function resolveForPlayer(User $user, Lesson $lesson): ?array
@@ -81,27 +89,72 @@ class AttemptService
         }
 
         return DB::transaction(function () use ($user, $lesson) {
-            // Lock any in-progress row so concurrent first visits serialize
-            // against the same attempt before falling through to create.
             LessonAttempt::query()
                 ->where('user_id', $user->id)
                 ->where('lesson_id', $lesson->id)
+                ->whereNull('lesson_assignment_id')
                 ->where('status', AttemptStatus::InProgress)
                 ->lockForUpdate()
                 ->first();
 
-            $existing = $this->existingAttempt($user, $lesson);
+            $existing = $this->existingUnassignedAttempt($user, $lesson);
 
             if ($existing !== null) {
                 return $existing;
             }
 
-            return ['attempt' => $this->createAttempt($user, $lesson), 'read_only' => false];
+            return [
+                'attempt' => $this->createUnassignedAttempt($user, $lesson),
+                'read_only' => false,
+            ];
         });
     }
 
     /**
-     * In-progress attempt for grading, or null when none.
+     * Assignment play: pin to the assignment's version. Caller must already
+     * have authorized play and checked available_at / active membership.
+     *
+     * @return array{attempt: LessonAttempt, read_only: bool}
+     */
+    public function resolveForAssignment(User $user, LessonAssignment $assignment): array
+    {
+        return DB::transaction(function () use ($user, $assignment) {
+            LessonAttempt::query()
+                ->where('user_id', $user->id)
+                ->where('lesson_assignment_id', $assignment->id)
+                ->where('status', AttemptStatus::InProgress)
+                ->lockForUpdate()
+                ->first();
+
+            $existing = $this->existingAssignmentAttempt($user, $assignment);
+
+            if ($existing !== null) {
+                return $existing;
+            }
+
+            return [
+                'attempt' => $this->createAssignedAttempt($user, $assignment),
+                'read_only' => false,
+            ];
+        });
+    }
+
+    /**
+     * In-progress unassigned attempt for a lesson, or null.
+     */
+    public function inProgressUnassigned(User $user, Lesson $lesson): ?LessonAttempt
+    {
+        return LessonAttempt::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->whereNull('lesson_assignment_id')
+            ->where('status', AttemptStatus::InProgress)
+            ->first();
+    }
+
+    /**
+     * @deprecated Prefer inProgressMatchingVersion for grading — lesson-only
+     *             lookup is ambiguous when a student has concurrent assigned attempts.
      */
     public function inProgressFor(User $user, Lesson $lesson): ?LessonAttempt
     {
@@ -109,6 +162,22 @@ class AttemptService
             ->where('user_id', $user->id)
             ->where('lesson_id', $lesson->id)
             ->where('status', AttemptStatus::InProgress)
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * Grading endpoint resolution: match the version_token's pin so concurrent
+     * assignment attempts for the same lesson do not cross wires.
+     */
+    public function inProgressMatchingVersion(User $user, Lesson $lesson, int $versionId): ?LessonAttempt
+    {
+        return LessonAttempt::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('lesson_version_id', $versionId)
+            ->where('status', AttemptStatus::InProgress)
+            ->orderByDesc('id')
             ->first();
     }
 
@@ -125,9 +194,8 @@ class AttemptService
     }
 
     /**
-     * Staff-only: supersede the current in_progress (or completed) attempt
-     * and open a fresh one on the currently available version. History on
-     * the old attempt is untouched.
+     * Staff: supersede and open a fresh attempt in the same scope (assignment
+     * pin preserved, or unassigned available-version pin).
      */
     public function restartForStaff(LessonAttempt $attempt, User $actor): LessonAttempt
     {
@@ -138,7 +206,7 @@ class AttemptService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $locked->loadMissing('lesson');
+            $locked->loadMissing(['lesson', 'assignment', 'user']);
 
             if ($locked->status === AttemptStatus::InProgress
                 || $locked->status === AttemptStatus::Completed) {
@@ -150,13 +218,14 @@ class AttemptService
                 ])->save();
             }
 
-            return $this->createAttempt($locked->user, $locked->lesson);
+            if ($locked->lesson_assignment_id !== null && $locked->assignment !== null) {
+                return $this->createAssignedAttempt($locked->user, $locked->assignment);
+            }
+
+            return $this->createUnassignedAttempt($locked->user, $locked->lesson);
         });
     }
 
-    /**
-     * Staff-only: add attempts for one block. History is untouched.
-     */
     public function grantRetries(
         LessonAttempt $attempt,
         string $blockId,
@@ -175,8 +244,6 @@ class AttemptService
     }
 
     /**
-     * Student-facing restore payload embedded beside the manifest.
-     *
      * @return array<string, mixed>
      */
     public function restorePayload(LessonAttempt $attempt, bool $readOnly): array
@@ -237,6 +304,33 @@ class AttemptService
     }
 
     /**
+     * @param  \Illuminate\Database\Eloquent\Builder<LessonAttempt>  $base
+     * @return array{attempt: LessonAttempt, read_only: bool}|null
+     */
+    private function pickExisting($base): ?array
+    {
+        $inProgress = (clone $base)
+            ->where('status', AttemptStatus::InProgress)
+            ->first();
+
+        if ($inProgress !== null) {
+            return ['attempt' => $inProgress, 'read_only' => false];
+        }
+
+        $completed = (clone $base)
+            ->where('status', AttemptStatus::Completed)
+            ->orderByDesc('completed_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($completed !== null) {
+            return ['attempt' => $completed, 'read_only' => true];
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $compiledConfig
      * @param  array<string, mixed>|null  $grading
      * @return array{result: array<string, mixed>, attempts: array{used: int, allowed: int|null, remaining: int|null}}
@@ -262,7 +356,7 @@ class AttemptService
         );
     }
 
-    private function createAttempt(User $user, Lesson $lesson): LessonAttempt
+    private function createUnassignedAttempt(User $user, Lesson $lesson): LessonAttempt
     {
         $version = $this->studentManifest->availableVersion($lesson);
 
@@ -270,6 +364,28 @@ class AttemptService
             throw new RuntimeException('Cannot create an attempt without an available version.');
         }
 
+        return $this->insertAttempt($user, $lesson, $version, null);
+    }
+
+    private function createAssignedAttempt(User $user, LessonAssignment $assignment): LessonAttempt
+    {
+        $assignment->loadMissing(['lesson', 'lessonVersion']);
+
+        $version = $assignment->lessonVersion;
+
+        if ($version === null) {
+            throw new RuntimeException('Assignment is missing its pinned lesson version.');
+        }
+
+        return $this->insertAttempt($user, $assignment->lesson, $version, $assignment->id);
+    }
+
+    private function insertAttempt(
+        User $user,
+        Lesson $lesson,
+        LessonVersion $version,
+        ?int $assignmentId,
+    ): LessonAttempt {
         $manifest = $version->manifest;
         $firstPageId = $manifest['pages'][0]['page_id'] ?? null;
 
@@ -284,6 +400,7 @@ class AttemptService
                 'user_id' => $user->id,
                 'lesson_id' => $lesson->id,
                 'lesson_version_id' => $version->id,
+                'lesson_assignment_id' => $assignmentId,
                 'current_page_id' => $firstPageId,
                 'status' => AttemptStatus::InProgress,
                 'started_at' => $now,
@@ -294,18 +411,25 @@ class AttemptService
                 'revision' => 0,
             ]);
         } catch (QueryException $e) {
-            // Two tabs raced the insert; the uniqueness mechanism (MySQL
-            // generated column, or a future unique constraint) rejected the
-            // loser. Re-query the winner — never surface the exception.
+            // Two tabs raced the insert. Re-query the winner in the *same*
+            // scope that was inserted — assignment id or unassigned lesson.
             if (! DatabaseErrors::isUniqueViolation($e)) {
                 throw $e;
             }
 
-            $winner = LessonAttempt::query()
+            $winnerQuery = LessonAttempt::query()
                 ->where('user_id', $user->id)
-                ->where('lesson_id', $lesson->id)
-                ->where('status', AttemptStatus::InProgress)
-                ->first();
+                ->where('status', AttemptStatus::InProgress);
+
+            if ($assignmentId === null) {
+                $winnerQuery
+                    ->where('lesson_id', $lesson->id)
+                    ->whereNull('lesson_assignment_id');
+            } else {
+                $winnerQuery->where('lesson_assignment_id', $assignmentId);
+            }
+
+            $winner = $winnerQuery->first();
 
             if ($winner === null) {
                 throw $e;

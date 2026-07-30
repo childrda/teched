@@ -39,6 +39,10 @@ class SaveBlockStateController extends Controller
             ], 409);
         }
 
+        if (! Auth::user()->can('work', $owned)) {
+            abort(403);
+        }
+
         $owned->loadMissing('lessonVersion');
         $block = $this->blocks->findBlock($owned->lessonVersion->manifest, $blockId);
 

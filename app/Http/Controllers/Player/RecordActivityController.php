@@ -39,6 +39,10 @@ class RecordActivityController extends Controller
             ], 409);
         }
 
+        if (! Auth::user()->can('work', $owned)) {
+            abort(403);
+        }
+
         $delta = $request->input('active_seconds_delta');
 
         if (! is_int($delta) && ! (is_string($delta) && ctype_digit($delta))) {

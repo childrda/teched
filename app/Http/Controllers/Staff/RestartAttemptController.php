@@ -7,12 +7,10 @@ use App\Models\LessonAttempt;
 use App\Services\AttemptService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 /**
- * Staff-only lesson restart: supersede the old attempt and open a new one.
- *
- * AUTHORIZATION HOLE (intentional until 4A): any teacher/admin may restart
- * any attempt — no roster scope yet. See BlockedAttemptsController.
+ * Staff-only lesson restart. Authorization: LessonAttemptPolicy::intervene.
  */
 class RestartAttemptController extends Controller
 {
@@ -22,6 +20,8 @@ class RestartAttemptController extends Controller
 
     public function __invoke(LessonAttempt $attempt): RedirectResponse
     {
+        Gate::authorize('intervene', $attempt);
+
         $this->attempts->restartForStaff($attempt, Auth::user());
 
         return redirect()

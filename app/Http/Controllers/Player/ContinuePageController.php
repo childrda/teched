@@ -39,6 +39,10 @@ class ContinuePageController extends Controller
             ], 409);
         }
 
+        if (! Auth::user()->can('work', $owned)) {
+            abort(403);
+        }
+
         $payload = $request->validate([
             'revision' => ['required', 'integer', 'min:0'],
         ]);

@@ -59,32 +59,26 @@ class RetryPolicy
     /**
      * Effective allowance, or null when unlimited.
      *
-     * `allow_retry: false` is treated as max_attempts = 1 at evaluation time.
-     * When max_attempts is null (and retries are allowed), grants are irrelevant.
+     * `allow_retry: false` is treated as max_attempts = 1 at evaluation time,
+     * then grants are still summed — a teacher grant on a no-retry block must
+     * actually unlock another submission.
      *
      * @param  array<string, mixed>|null  $grading
      */
     public function allowed(LessonAttempt $attempt, string $blockId, ?array $grading): ?int
     {
         $allowRetry = (bool) ($grading['allow_retry'] ?? true);
+        $base = $allowRetry ? ($grading['max_attempts'] ?? null) : 1;
 
-        if (! $allowRetry) {
-            return 1;
-        }
-
-        $maxAttempts = $grading['max_attempts'] ?? null;
-
-        if ($maxAttempts === null) {
+        if ($base === null) {
             return null;
         }
-
-        $base = max(1, (int) $maxAttempts);
 
         $grants = (int) AttemptRetryGrant::query()
             ->where('lesson_attempt_id', $attempt->id)
             ->where('block_id', $blockId)
             ->sum('additional_attempts');
 
-        return $base + $grants;
+        return max(1, (int) $base) + $grants;
     }
 }

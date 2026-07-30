@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\GradeBlockController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LessonPlayerController;
+use App\Http\Controllers\Player\AssignmentPlayerController;
 use App\Http\Controllers\Player\ContinuePageController;
 use App\Http\Controllers\Player\RecordActivityController;
 use App\Http\Controllers\Player\SaveBlockStateController;
@@ -26,6 +27,9 @@ Route::post('/logout', [SessionController::class, 'destroy'])
 
 Route::middleware('auth')->group(function () {
     Route::get('/lessons/{code}', LessonPlayerController::class)->name('lessons.play');
+
+    Route::get('/player/assignments/{assignment}', AssignmentPlayerController::class)
+        ->name('player.assignments.show');
 
     // Group auth runs before this throttle, so the limiter keys per user
     // rather than per shared-cart IP.

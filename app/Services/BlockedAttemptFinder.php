@@ -5,10 +5,11 @@ namespace App\Services;
 use App\Blocks\BlockTypeRegistry;
 use App\Enums\AttemptStatus;
 use App\Models\LessonAttempt;
+use App\Models\User;
 
 /**
  * Minimal staff listing: in-progress attempts with no remaining submissions
- * on a gradable block that has not been passed.
+ * on a gradable block that has not been passed. Scoped via visibleTo().
  */
 class BlockedAttemptFinder
 {
@@ -28,10 +29,11 @@ class BlockedAttemptFinder
      *     remaining: int|null
      * }>
      */
-    public function all(): array
+    public function forUser(User $user): array
     {
         $attempts = LessonAttempt::query()
-            ->with(['user', 'lesson', 'lessonVersion', 'blockSubmissions'])
+            ->visibleTo($user)
+            ->with(['user', 'lesson', 'lessonVersion', 'blockSubmissions', 'assignment'])
             ->where('status', AttemptStatus::InProgress)
             ->orderByDesc('last_activity_at')
             ->get();
