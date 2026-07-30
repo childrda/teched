@@ -1,3 +1,5 @@
+import { seededShuffle } from './seeded-shuffle';
+
 /**
  * Alpine component for a quiz block: local answers, a grading POST, and a
  * gradable completion contributor.
@@ -6,6 +8,10 @@
  * on a successful HTTP 200 whose body is the expected five-key result.
  * Everything else — 422, 404, network failure, malformed body — leaves those
  * three untouched and is surfaced as an error.
+ *
+ * Question shuffle is normally done in Blade (PHP SeededShuffle). The Alpine
+ * path below only runs when config.shuffle is true — kept for parity with
+ * the shared algorithm, not as the primary path.
  *
  * @param {{
  *   blockId: string,
@@ -19,19 +25,12 @@
 export function quizActivity(config = {}) {
   const questionIds = (config.questions ?? []).map((question) => question.id);
 
-  // TODO Phase 3: seed the shuffle from the attempt so question order
-  // survives a resume. Today a reload reorders the questions.
-  const questions =
-    config.shuffle === true
-      ? shuffle([...(config.questions ?? [])])
-      : [...(config.questions ?? [])];
-
   return {
     blockId: config.blockId ?? '',
     pageId: config.pageId ?? '',
     completionType: config.completionType ?? '',
     strings: config.strings ?? {},
-    questions,
+    questions: [...(config.questions ?? [])],
     answers: Object.fromEntries(questionIds.map((id) => [id, null])),
     attemptCount: 0,
     firstResult: null,
@@ -39,10 +38,46 @@ export function quizActivity(config = {}) {
     submitting: false,
     error: '',
     announcement: '',
+    readOnly: false,
     disposeContributor: null,
+
+    init() {
+      const player = this.player();
+      this.readOnly = player?.readOnly === true;
+
+      if (config.shuffle === true) {
+        this.questions = seededShuffle(
+          [...(config.questions ?? [])],
+          player?.shuffleSeed?.() ?? '',
+          this.blockId,
+        );
+      }
+
+      this.restoreState(player?.stateFor?.(this.blockId));
+
+      const submission = player?.submissionFor?.(this.blockId);
+
+      if (submission && isPublicResult(submission)) {
+        this.latestResult = {
+          score: submission.score,
+          max_score: submission.max_score,
+          percentage: submission.percentage,
+          passed: submission.passed,
+          requires_manual_review: submission.requires_manual_review,
+        };
+        this.firstResult = this.latestResult;
+        this.attemptCount = submission.attempt_number ?? 1;
+      }
+    },
 
     destroy() {
       this.disposeContributor?.();
+    },
+
+    player() {
+      const root = this.$el?.closest?.('[data-lesson-code]');
+
+      return root && window.Alpine ? window.Alpine.$data(root) : null;
     },
 
     captureDisposer(dispose) {
@@ -60,6 +95,32 @@ export function quizActivity(config = {}) {
             ? (this.strings.gate_pass ?? this.strings.gate ?? '')
             : (this.strings.gate ?? ''),
       };
+    },
+
+    serializeState() {
+      return { answers: { ...this.answers } };
+    },
+
+    restoreState(state) {
+      if (! state || typeof state !== 'object' || typeof state.answers !== 'object' || ! state.answers) {
+        return;
+      }
+
+      for (const id of questionIds) {
+        const value = state.answers[id];
+
+        if (value === null || typeof value === 'string') {
+          this.answers[id] = value;
+        }
+      }
+    },
+
+    onAnswer() {
+      if (this.readOnly) {
+        return;
+      }
+
+      this.player()?.queueSave?.(this.blockId, this.serializeState());
     },
 
     get isSatisfied() {
@@ -93,7 +154,7 @@ export function quizActivity(config = {}) {
     },
 
     async submit() {
-      if (this.submitting) {
+      if (this.submitting || this.readOnly) {
         return;
       }
 
@@ -153,6 +214,7 @@ export function quizActivity(config = {}) {
           return;
         }
 
+        // Display-only counter — the server assigns attempt_number.
         this.attemptCount += 1;
 
         if (this.firstResult === null) {
@@ -205,7 +267,7 @@ export function isPublicResult(body) {
     return false;
   }
 
-  const keys = Object.keys(body).sort();
+  const keys = Object.keys(body).filter((key) => key !== 'attempt_number').sort();
   const expected = ['max_score', 'passed', 'percentage', 'requires_manual_review', 'score'];
 
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
@@ -219,18 +281,6 @@ export function isPublicResult(body) {
     typeof body.passed === 'boolean' &&
     typeof body.requires_manual_review === 'boolean'
   );
-}
-
-function shuffle(values) {
-  const shuffled = [...values];
-
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(Math.random() * (index + 1));
-
-    [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
-  }
-
-  return shuffled;
 }
 
 function fill(template, values) {

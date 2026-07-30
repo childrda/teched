@@ -3,10 +3,14 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Blocks\Concerns\ValidatesStudentTextState;
 use App\Services\HtmlSanitizer;
+use Illuminate\Validation\ValidationException;
 
 class ShortResponseBlock extends AbstractBlockType
 {
+    use ValidatesStudentTextState;
+
     public function __construct(private readonly HtmlSanitizer $sanitizer)
     {
     }
@@ -67,6 +71,44 @@ class ShortResponseBlock extends AbstractBlockType
         unset($redacted['rubric_html']);
 
         return $redacted;
+    }
+
+    public function holdsStudentState(): bool
+    {
+        return true;
+    }
+
+    public function validateState(array $state, array $compiledConfig): array
+    {
+        if (! array_key_exists('value', $state)) {
+            throw ValidationException::withMessages([
+                'state.value' => 'Short response state must include a value.',
+            ]);
+        }
+
+        // Reject unrecognized keys rather than silently dropping them.
+        foreach (array_keys($state) as $key) {
+            if ($key !== 'value') {
+                throw ValidationException::withMessages([
+                    "state.{$key}" => 'Unrecognized short response state key.',
+                ]);
+            }
+        }
+
+        return [
+            'value' => $this->normalizeStudentText($state['value'], 'state.value'),
+        ];
+    }
+
+    public function isStateSatisfied(array $state, array $compiledConfig): bool
+    {
+        $value = $state['value'] ?? null;
+
+        if (! is_string($value)) {
+            return false;
+        }
+
+        return $this->textMeetsMinLength($value, $compiledConfig['min_length'] ?? null);
     }
 
     public function speakableText(array $redactedConfig): array

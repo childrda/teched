@@ -3,6 +3,8 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Blocks\Concerns\ValidatesPlacementState;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 
 /**
@@ -18,6 +20,8 @@ use Illuminate\Validation\Validator;
  */
 class MatchingBlock extends AbstractBlockType
 {
+    use ValidatesPlacementState;
+
     public function key(): string
     {
         return 'matching';
@@ -138,6 +142,37 @@ class MatchingBlock extends AbstractBlockType
         }, $redacted['slots']);
 
         return $redacted;
+    }
+
+    public function holdsStudentState(): bool
+    {
+        return true;
+    }
+
+    public function validateState(array $state, array $compiledConfig): array
+    {
+        $slots = is_array($compiledConfig['slots'] ?? null) ? $compiledConfig['slots'] : [];
+        $bank = is_array($compiledConfig['bank'] ?? null) ? $compiledConfig['bank'] : [];
+
+        foreach (array_keys($state) as $key) {
+            if ($key !== 'placements') {
+                throw ValidationException::withMessages([
+                    "state.{$key}" => 'Unrecognized matching state key.',
+                ]);
+            }
+        }
+
+        return [
+            'placements' => $this->validatePlacementMap($state, $slots, $bank, 'placements'),
+        ];
+    }
+
+    public function isStateSatisfied(array $state, array $compiledConfig): bool
+    {
+        $map = is_array($state['placements'] ?? null) ? $state['placements'] : [];
+        $slots = is_array($compiledConfig['slots'] ?? null) ? $compiledConfig['slots'] : [];
+
+        return $this->placementMapIsComplete($map, $slots);
     }
 
     public function grade(array $compiledConfig, ?array $grading, array $response): ?array

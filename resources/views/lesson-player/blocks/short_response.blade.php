@@ -34,6 +34,8 @@
         <textarea id="{{ $textareaId }}"
                   class="mt-2 min-h-32 w-full rounded-md border-2 border-slate-500 bg-white px-3 py-2 text-base"
                   x-model="value"
+                  @input="onInput()"
+                  :readonly="readOnly"
                   @if (filled($config['placeholder'] ?? null)) placeholder="{{ $config['placeholder'] }}" @endif
                   aria-describedby="{{ $hintId }}"></textarea>
 

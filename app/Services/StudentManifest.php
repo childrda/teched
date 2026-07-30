@@ -45,10 +45,8 @@ class StudentManifest
     }
 
     /**
-     * The servable manifest, or null when the lesson has nothing a student
-     * may see: any status other than published (drafts and archived
-     * lessons stay invisible even when prior versions exist), or a missing
-     * current version row.
+     * The currently available version's student payload, or null when the
+     * lesson has nothing a student may see.
      */
     public function forLesson(Lesson $lesson): ?array
     {
@@ -58,6 +56,17 @@ class StudentManifest
             return null;
         }
 
+        return $this->forVersion($version);
+    }
+
+    /**
+     * Redacted, speech-annotated payload for a specific published version —
+     * the attempt's pin, not necessarily the lesson's current version.
+     *
+     * @return array<string, mixed>
+     */
+    public function forVersion(LessonVersion $version): array
+    {
         // The array cast returns a fresh decoded copy, so redaction below
         // never mutates the stored manifest or the model's attribute.
         $manifest = $version->manifest;

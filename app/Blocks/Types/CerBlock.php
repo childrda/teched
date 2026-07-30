@@ -3,7 +3,9 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use App\Blocks\Concerns\ValidatesStudentTextState;
 use App\Services\HtmlSanitizer;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 
 /**
@@ -11,6 +13,8 @@ use Illuminate\Validation\Validator;
  */
 class CerBlock extends AbstractBlockType
 {
+    use ValidatesStudentTextState;
+
     public function __construct(private readonly HtmlSanitizer $sanitizer)
     {
     }
@@ -78,6 +82,83 @@ class CerBlock extends AbstractBlockType
                 $validatedConfig['fields']
             )),
         ];
+    }
+
+    public function holdsStudentState(): bool
+    {
+        return true;
+    }
+
+    public function validateState(array $state, array $compiledConfig): array
+    {
+        if (! array_key_exists('values', $state) || ! is_array($state['values'])) {
+            throw ValidationException::withMessages([
+                'state.values' => 'CER state must include a values object.',
+            ]);
+        }
+
+        foreach (array_keys($state) as $key) {
+            if ($key !== 'values') {
+                throw ValidationException::withMessages([
+                    "state.{$key}" => 'Unrecognized CER state key.',
+                ]);
+            }
+        }
+
+        $fields = is_array($compiledConfig['fields'] ?? null) ? $compiledConfig['fields'] : [];
+        $fieldIds = [];
+
+        foreach ($fields as $field) {
+            if (is_array($field) && is_string($field['id'] ?? null)) {
+                $fieldIds[$field['id']] = true;
+            }
+        }
+
+        $normalized = [];
+
+        foreach ($state['values'] as $fieldId => $value) {
+            if (! is_string($fieldId) || ! isset($fieldIds[$fieldId])) {
+                throw ValidationException::withMessages([
+                    'state.values' => "Unknown CER field id \"{$fieldId}\".",
+                ]);
+            }
+
+            $normalized[$fieldId] = $this->normalizeStudentText($value, "state.values.{$fieldId}");
+        }
+
+        foreach (array_keys($fieldIds) as $fieldId) {
+            if (! array_key_exists($fieldId, $normalized)) {
+                throw ValidationException::withMessages([
+                    "state.values.{$fieldId}" => 'Every CER field must be present in the state map.',
+                ]);
+            }
+        }
+
+        return ['values' => $normalized];
+    }
+
+    public function isStateSatisfied(array $state, array $compiledConfig): bool
+    {
+        $values = is_array($state['values'] ?? null) ? $state['values'] : [];
+        $fields = is_array($compiledConfig['fields'] ?? null) ? $compiledConfig['fields'] : [];
+
+        if ($fields === []) {
+            return false;
+        }
+
+        foreach ($fields as $field) {
+            if (! is_array($field) || ! is_string($field['id'] ?? null)) {
+                return false;
+            }
+
+            $value = $values[$field['id']] ?? null;
+
+            if (! is_string($value) || ! $this->textMeetsMinLength($value, $field['min_length'] ?? null)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function speakableText(array $redactedConfig): array

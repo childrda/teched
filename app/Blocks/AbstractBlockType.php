@@ -5,6 +5,7 @@ namespace App\Blocks;
 use App\Blocks\Contracts\BlockType;
 use App\Support\PlainText;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 
 abstract class AbstractBlockType implements BlockType
@@ -47,6 +48,23 @@ abstract class AbstractBlockType implements BlockType
     public function gradingResponseShape(): ?string
     {
         return null;
+    }
+
+    public function holdsStudentState(): bool
+    {
+        return false;
+    }
+
+    public function validateState(array $state, array $compiledConfig): array
+    {
+        throw ValidationException::withMessages([
+            'state' => 'This block does not keep student working state.',
+        ]);
+    }
+
+    public function isStateSatisfied(array $state, array $compiledConfig): bool
+    {
+        return true;
     }
 
     /**

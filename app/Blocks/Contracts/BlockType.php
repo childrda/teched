@@ -61,6 +61,21 @@ interface BlockType
      */
     public function gradingResponseShape(): ?string;
 
+    /** Whether this type keeps student working state between visits. */
+    public function holdsStudentState(): bool;
+
+    /**
+     * Validate and normalize an incoming state payload against the compiled
+     * config. Throws ValidationException on anything unrecognized. Returns the
+     * state as it should be stored — never the caller's array unchanged.
+     *
+     * @throws ValidationException
+     */
+    public function validateState(array $state, array $compiledConfig): array;
+
+    /** Whether stored state satisfies this block on its own terms. */
+    public function isStateSatisfied(array $state, array $compiledConfig): bool;
+
     /**
      * Returns an ordered list of read-aloud (text-to-speech) segments:
      *   [{ id: string, label: string|null, text: string }]

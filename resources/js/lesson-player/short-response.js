@@ -17,14 +17,24 @@ export function shortResponseActivity(config = {}) {
     minLength: config.minLength ?? null,
     strings: config.strings ?? {},
     value: '',
+    readOnly: false,
     disposeContributor: null,
 
     init() {
-      // Registration happens from Blade via captureDisposer(addContributor(...)).
+      const player = this.player();
+
+      this.readOnly = player?.readOnly === true;
+      this.restoreState(player?.stateFor?.(this.blockId));
     },
 
     destroy() {
       this.disposeContributor?.();
+    },
+
+    player() {
+      const root = this.$el?.closest?.('[data-lesson-code]');
+
+      return root && window.Alpine ? window.Alpine.$data(root) : null;
     },
 
     captureDisposer(dispose) {
@@ -38,6 +48,26 @@ export function shortResponseActivity(config = {}) {
         isSatisfied: () => this.isSatisfied,
         message: this.strings.gate ?? '',
       };
+    },
+
+    serializeState() {
+      return { value: this.value };
+    },
+
+    restoreState(state) {
+      if (! state || typeof state !== 'object' || typeof state.value !== 'string') {
+        return;
+      }
+
+      this.value = state.value;
+    },
+
+    onInput() {
+      if (this.readOnly) {
+        return;
+      }
+
+      this.player()?.queueSave?.(this.blockId, this.serializeState());
     },
 
     get isSatisfied() {

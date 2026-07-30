@@ -48,6 +48,8 @@
             <textarea id="{{ $textareaId }}"
                       class="mt-2 min-h-28 w-full rounded-md border-2 border-slate-500 bg-white px-3 py-2 text-base"
                       x-model="values[{{ $fieldIdJs }}]"
+                      @input="onInput()"
+                      :readonly="readOnly"
                       @if (filled($field['placeholder'] ?? null)) placeholder="{{ $field['placeholder'] }}" @endif
                       aria-describedby="{{ $hintId }}"></textarea>
 

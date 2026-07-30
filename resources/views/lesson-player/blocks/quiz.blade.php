@@ -1,10 +1,15 @@
 @php
     $questions = array_values($config['questions'] ?? []);
 
-    // TODO Phase 3: seed the shuffle from the attempt so question order
-    // survives a resume. Today a reload reorders the questions.
+    // Shuffle in Blade (not Alpine) so speakableText ids and data-speech-id
+    // stay aligned. Algorithm: app/Support/SeededShuffle.php — mirrored in
+    // resources/js/lesson-player/seeded-shuffle.js for the matching bank.
     if (($config['shuffle_questions'] ?? false) === true) {
-        shuffle($questions);
+        $questions = \App\Support\SeededShuffle::shuffle(
+            $questions,
+            (string) (($playerAttempt ?? [])['shuffle_seed'] ?? ''),
+            (string) $blockId
+        );
     }
 
     $activity = [
@@ -78,7 +83,9 @@
                                name="quiz-{{ $blockId }}-{{ $questionId }}"
                                value="{{ $option['id'] }}"
                                data-speech-id="{{ $questionId }}:{{ $option['id'] }}"
-                               x-model="answers[{{ $questionIdJs }}]">
+                               x-model="answers[{{ $questionIdJs }}]"
+                               @change="onAnswer()"
+                               :disabled="readOnly">
                         <span class="text-base/7">{{ $option['text'] }}</span>
                     </label>
                 @endforeach
@@ -89,6 +96,7 @@
     <div class="flex flex-wrap items-center gap-3">
         <button type="button"
                 class="player-btn player-btn-primary"
+                x-show="! readOnly"
                 :aria-disabled="submitting ? 'true' : 'false'"
                 @click="submit()"
                 x-text="submitting ? strings.submitting : (latestResult ? strings.retry : strings.submit)"></button>

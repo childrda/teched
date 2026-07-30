@@ -3,6 +3,7 @@
 namespace App\Blocks\Types;
 
 use App\Blocks\AbstractBlockType;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 
 class QuizBlock extends AbstractBlockType
@@ -136,6 +137,79 @@ class QuizBlock extends AbstractBlockType
         }, $redacted['questions']);
 
         return $redacted;
+    }
+
+    public function holdsStudentState(): bool
+    {
+        return true;
+    }
+
+    public function validateState(array $state, array $compiledConfig): array
+    {
+        if (! array_key_exists('answers', $state) || ! is_array($state['answers'])) {
+            throw ValidationException::withMessages([
+                'state.answers' => 'Quiz state must include an answers object.',
+            ]);
+        }
+
+        foreach (array_keys($state) as $key) {
+            if ($key !== 'answers') {
+                throw ValidationException::withMessages([
+                    "state.{$key}" => 'Unrecognized quiz state key.',
+                ]);
+            }
+        }
+
+        $questions = is_array($compiledConfig['questions'] ?? null) ? $compiledConfig['questions'] : [];
+        $optionsByQuestion = [];
+
+        foreach ($questions as $question) {
+            if (! is_array($question) || ! is_string($question['id'] ?? null)) {
+                continue;
+            }
+
+            $optionIds = [];
+
+            foreach ($question['options'] ?? [] as $option) {
+                if (is_array($option) && is_string($option['id'] ?? null)) {
+                    $optionIds[$option['id']] = true;
+                }
+            }
+
+            $optionsByQuestion[$question['id']] = $optionIds;
+        }
+
+        $normalized = [];
+
+        foreach ($state['answers'] as $questionId => $optionId) {
+            if (! is_string($questionId) || ! isset($optionsByQuestion[$questionId])) {
+                throw ValidationException::withMessages([
+                    'state.answers' => "Unknown question id \"{$questionId}\".",
+                ]);
+            }
+
+            if ($optionId === null) {
+                $normalized[$questionId] = null;
+
+                continue;
+            }
+
+            if (! is_string($optionId) || ! isset($optionsByQuestion[$questionId][$optionId])) {
+                throw ValidationException::withMessages([
+                    "state.answers.{$questionId}" => "Unknown option id \"{$optionId}\".",
+                ]);
+            }
+
+            $normalized[$questionId] = $optionId;
+        }
+
+        return ['answers' => $normalized];
+    }
+
+    public function isStateSatisfied(array $state, array $compiledConfig): bool
+    {
+        // Quiz completion is driven by submission records, not working state.
+        return true;
     }
 
     public function grade(array $compiledConfig, ?array $grading, array $response): ?array

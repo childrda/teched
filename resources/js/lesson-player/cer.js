@@ -21,10 +21,24 @@ export function cerActivity(config = {}) {
     pageId: config.pageId ?? '',
     strings: config.strings ?? {},
     values: Object.fromEntries(fields.map((field) => [field.id, ''])),
+    readOnly: false,
     disposeContributor: null,
+
+    init() {
+      const player = this.player();
+
+      this.readOnly = player?.readOnly === true;
+      this.restoreState(player?.stateFor?.(this.blockId));
+    },
 
     destroy() {
       this.disposeContributor?.();
+    },
+
+    player() {
+      const root = this.$el?.closest?.('[data-lesson-code]');
+
+      return root && window.Alpine ? window.Alpine.$data(root) : null;
     },
 
     captureDisposer(dispose) {
@@ -38,6 +52,32 @@ export function cerActivity(config = {}) {
         isSatisfied: () => this.isSatisfied,
         message: this.strings.gate ?? '',
       };
+    },
+
+    serializeState() {
+      return { values: { ...this.values } };
+    },
+
+    restoreState(state) {
+      if (! state || typeof state !== 'object' || typeof state.values !== 'object' || ! state.values) {
+        return;
+      }
+
+      for (const field of fields) {
+        const value = state.values[field.id];
+
+        if (typeof value === 'string') {
+          this.values[field.id] = value;
+        }
+      }
+    },
+
+    onInput() {
+      if (this.readOnly) {
+        return;
+      }
+
+      this.player()?.queueSave?.(this.blockId, this.serializeState());
     },
 
     get isSatisfied() {

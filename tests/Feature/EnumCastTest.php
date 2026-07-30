@@ -1,13 +1,17 @@
 <?php
 
+use App\Enums\AttemptStatus;
 use App\Enums\BlockType;
 use App\Enums\LessonStatus;
 use App\Enums\PageCompletionType;
 use App\Enums\UserRole;
 use App\Models\Lesson;
+use App\Models\LessonAttempt;
 use App\Models\LessonBlock;
 use App\Models\LessonPage;
 use App\Models\User;
+use App\Services\AttemptService;
+use App\Services\LessonPublisher;
 
 test('LessonStatus casts and round-trips correctly', function (LessonStatus $status) {
     $lesson = Lesson::factory()->create(['status' => $status]);
@@ -62,3 +66,21 @@ test('UserRole casts and round-trips correctly', function (UserRole $role) {
         ->and($fresh->role)->toBe($role)
         ->and($fresh->getRawOriginal('role'))->toBe($role->value);
 })->with(UserRole::cases());
+
+test('AttemptStatus casts and round-trips correctly', function (AttemptStatus $status) {
+    $user = asStudent();
+    $lesson = createLessonWithAllBlockTypes();
+    app(LessonPublisher::class)->publish($lesson, User::factory()->create());
+    $attempt = app(AttemptService::class)->resolveForPlayer($user, $lesson->fresh())['attempt'];
+
+    $attempt->forceFill([
+        'status' => $status,
+        'completed_at' => $status === AttemptStatus::Completed ? now() : null,
+    ])->save();
+
+    $fresh = LessonAttempt::query()->findOrFail($attempt->id);
+
+    expect($fresh->status)->toBeInstanceOf(AttemptStatus::class)
+        ->and($fresh->status)->toBe($status)
+        ->and($fresh->getRawOriginal('status'))->toBe($status->value);
+})->with(AttemptStatus::cases());

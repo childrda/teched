@@ -18,7 +18,7 @@
 {{-- The whole manifest is embedded once, escaped by @js. The player never fetches.
      data-lesson-code lets nested block components build the grading URL
      without changing the Block view component. --}}
-<div x-data="lessonPlayer(@js($manifest))"
+<div x-data="lessonPlayer(@js($manifest), @js($attempt))"
      data-lesson-code="{{ $manifest['code'] }}"
      x-cloak
      class="flex min-h-full flex-col">
@@ -28,6 +28,13 @@
             <div class="min-w-0">
                 <h1 class="truncate text-lg font-bold sm:text-xl">{{ $manifest['title'] }}</h1>
                 <p class="text-sm text-slate-700" x-text="`Page ${currentIndex + 1} of ${totalPages}`"></p>
+                <p class="text-sm text-slate-600" x-show="readOnly" x-cloak>{{ __('player.read_only') }}</p>
+                <p class="text-sm font-semibold text-slate-700"
+                   role="status"
+                   aria-live="polite"
+                   x-show="! readOnly"
+                   x-text="syncMessage"
+                   x-cloak></p>
             </div>
 
             <div class="flex flex-wrap items-center gap-3">

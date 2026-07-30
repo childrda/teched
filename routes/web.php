@@ -3,6 +3,9 @@
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\GradeBlockController;
 use App\Http\Controllers\LessonPlayerController;
+use App\Http\Controllers\Player\ContinuePageController;
+use App\Http\Controllers\Player\RecordActivityController;
+use App\Http\Controllers\Player\SaveBlockStateController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -27,4 +30,19 @@ Route::middleware('auth')->group(function () {
     Route::post('/player/lessons/{code}/blocks/{blockId}/grade', GradeBlockController::class)
         ->middleware('throttle:30,1')
         ->name('player.blocks.grade');
+
+    // Player writes stay on the web stack (session + CSRF). Do not move them
+    // to routes/api.php — that group has StartSession but no VerifyCsrfToken.
+    // throttle:120,1 is a runaway guard for chatty autosave, not a security control.
+    Route::put('/player/attempts/{attempt}/blocks/{blockId}/state', SaveBlockStateController::class)
+        ->middleware('throttle:120,1')
+        ->name('player.blocks.state');
+
+    Route::post('/player/attempts/{attempt}/activity', RecordActivityController::class)
+        ->middleware('throttle:60,1')
+        ->name('player.attempts.activity');
+
+    Route::post('/player/attempts/{attempt}/pages/{pageId}/continue', ContinuePageController::class)
+        ->middleware('throttle:60,1')
+        ->name('player.pages.continue');
 });

@@ -1,22 +1,30 @@
+import { createActiveTimeTracker } from './active-time';
+import { createAutosaveController } from './autosave';
 import { createCompletionRegistry } from './completion';
 import { createSpeechController, RATE } from './speech';
 
 /**
  * The student player, as an Alpine component.
  *
- * The whole manifest is handed over by the server in one go, so navigation
- * is a change of index rather than a request. State lives in memory only:
- * nothing about a student's place, answers, or progress is written anywhere.
- * The single exception is read-aloud preferences, which speech.js keeps
- * under its own namespaced keys.
+ * Navigation is a change of index rather than a request. Attempt restore,
+ * autosave, and active-time tracking keep work durable across reloads.
  */
-export function lessonPlayer(manifest) {
+export function lessonPlayer(manifest, attempt = null) {
+  const restore = attempt && typeof attempt === 'object' ? attempt : null;
+  const readOnly = restore?.read_only === true || restore?.status === 'completed';
+
   return {
     manifest,
+    attempt: restore,
+    readOnly,
     pages: Array.isArray(manifest?.pages) ? manifest.pages : [],
     currentIndex: 0,
+    attemptRevision: restore?.revision ?? 0,
     announcement: '',
     settingsOpen: false,
+    syncStatus: 'saved',
+    syncMessage: '',
+    conflicted: false,
 
     /**
      * Bumped whenever the set of contributors changes, so the Continue gate
@@ -25,9 +33,12 @@ export function lessonPlayer(manifest) {
      * the gate is what makes the gate depend on it.
      */
     registryVersion: 0,
+    syncVersion: 0,
 
     completion: createCompletionRegistry(),
     speechController: null,
+    autosave: null,
+    activeTime: null,
 
     speech: {
       supported: false,
@@ -46,10 +57,90 @@ export function lessonPlayer(manifest) {
       });
 
       this.speechController.init();
+
+      if (restore?.current_page_id) {
+        const index = this.pages.findIndex((page) => page.page_id === restore.current_page_id);
+
+        if (index >= 0) {
+          this.currentIndex = index;
+        }
+      }
+
+      if (restore?.id && ! this.readOnly) {
+        const getCsrf = () =>
+          document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
+
+        this.autosave = createAutosaveController({
+          attemptId: restore.id,
+          getCsrf,
+          onStatus: (status, detail = {}) => {
+            if (status === 'announce') {
+              this.announceSync(detail.status);
+
+              return;
+            }
+
+            if (status === 'conflict') {
+              this.conflicted = true;
+              this.syncStatus = 'conflict';
+              this.syncMessage = this.strings.conflict;
+              this.syncVersion += 1;
+
+              return;
+            }
+
+            this.syncStatus = status;
+            this.syncMessage = this.strings[status] ?? '';
+            this.syncVersion += 1;
+          },
+        });
+
+        for (const row of restore.block_states ?? []) {
+          this.autosave.setAcknowledged(row.block_id, row.revision ?? 0);
+        }
+
+        this.autosave.replayPending();
+
+        this.activeTime = createActiveTimeTracker({
+          attemptId: restore.id,
+          getCsrf,
+        });
+        this.activeTime.start();
+
+        this._onVisibility = () => {
+          if (document.visibilityState === 'hidden') {
+            void this.autosave?.flushAll({ keepalive: true });
+            void this.activeTime?.flush({ keepalive: true });
+          }
+        };
+        this._onPageHide = () => {
+          void this.autosave?.flushAll({ keepalive: true });
+          void this.activeTime?.flush({ keepalive: true });
+        };
+
+        document.addEventListener('visibilitychange', this._onVisibility);
+        window.addEventListener('pagehide', this._onPageHide);
+      }
     },
+
+    get strings() {
+      return {
+        saving: 'Saving',
+        saved: 'Saved',
+        pending: 'Not yet synced',
+        conflict: 'This lesson is open somewhere else. Reload the page to continue.',
+      };
+    },
+
+    _onVisibility: null,
+    _onPageHide: null,
 
     destroy() {
       this.speechController?.destroy();
+      this.autosave?.destroy();
+      this.activeTime?.destroy();
+      document.removeEventListener('visibilitychange', this._onVisibility);
+      window.removeEventListener('pagehide', this._onPageHide);
     },
 
     get totalPages() {
@@ -81,11 +172,10 @@ export function lessonPlayer(manifest) {
     },
 
     get allowSkip() {
-      return this.pageSettings.allow_skip === true;
+      return this.pageSettings.allow_skip === true && ! this.readOnly;
     },
 
     get completionState() {
-      // Depend on the contributor set as well as on their answers.
       void this.registryVersion;
 
       const page = this.currentPage;
@@ -97,15 +187,81 @@ export function lessonPlayer(manifest) {
       return this.completion.evaluate(page.page_id, page.completion_type, { shown: true });
     },
 
+    get pageBlockIds() {
+      return (this.currentPage?.blocks ?? []).map((block) => block.block_id);
+    },
+
+    get pageSynced() {
+      void this.syncVersion;
+
+      if (this.readOnly || ! this.autosave) {
+        return true;
+      }
+
+      if (this.conflicted) {
+        return false;
+      }
+
+      return this.autosave.isPageSynced(this.pageBlockIds);
+    },
+
     get canContinue() {
-      return this.completionState.satisfied;
+      if (this.readOnly) {
+        return false;
+      }
+
+      return this.completionState.satisfied && this.pageSynced && ! this.conflicted;
     },
 
     /** Why Continue is unavailable, or '' when it is available. */
     get gateMessage() {
+      if (this.readOnly) {
+        return 'This lesson is complete. Your answers are shown read-only.';
+      }
+
+      if (this.conflicted) {
+        return this.strings.conflict;
+      }
+
+      if (! this.pageSynced) {
+        return this.strings.pending;
+      }
+
       const state = this.completionState;
 
       return state.satisfied ? '' : (state.message ?? '');
+    },
+
+    stateFor(blockId) {
+      const row = (this.attempt?.block_states ?? []).find((entry) => entry.block_id === blockId);
+
+      return row?.state ?? null;
+    },
+
+    revisionFor(blockId) {
+      return this.autosave?.getAcknowledged(blockId) ?? this.revisionFromRestore(blockId);
+    },
+
+    revisionFromRestore(blockId) {
+      const row = (this.attempt?.block_states ?? []).find((entry) => entry.block_id === blockId);
+
+      return row?.revision ?? 0;
+    },
+
+    submissionFor(blockId) {
+      return this.attempt?.submissions?.[blockId] ?? null;
+    },
+
+    shuffleSeed() {
+      return this.attempt?.shuffle_seed ?? '';
+    },
+
+    queueSave(blockId, state) {
+      if (this.readOnly || ! this.autosave) {
+        return;
+      }
+
+      this.autosave.queue(blockId, state, this.autosave.getAcknowledged(blockId));
     },
 
     /**
@@ -139,22 +295,109 @@ export function lessonPlayer(manifest) {
       };
     },
 
-    goForward() {
-      if (this.isLastPage) {
+    async goForward() {
+      if (this.isLastPage || this.readOnly) {
         return;
       }
 
-      if (!this.canContinue) {
+      if (! this.canContinue) {
         this.announce(this.gateMessage);
 
         return;
       }
 
-      this.goTo(this.currentIndex + 1);
+      if (this.autosave) {
+        for (const blockId of this.pageBlockIds) {
+          this.autosave.cancelDebounce(blockId);
+        }
+
+        const synced = await this.autosave.flushAll();
+
+        if (! synced || ! this.pageSynced) {
+          this.announce(this.strings.pending);
+
+          return;
+        }
+      }
+
+      // Without an attempt (unit tests, or a misconfigured embed) navigate
+      // locally — the live player always has restore data from the server.
+      if (! this.attempt?.id) {
+        this.goTo(this.currentIndex + 1);
+
+        return;
+      }
+
+      const pageId = this.currentPage?.page_id;
+      const csrf =
+        typeof document !== 'undefined'
+          ? (document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '')
+          : '';
+
+      try {
+        const response = await fetch(
+          `/player/attempts/${encodeURIComponent(this.attempt.id)}/pages/${encodeURIComponent(pageId)}/continue`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              'X-CSRF-TOKEN': csrf,
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ revision: this.attemptRevision }),
+          },
+        );
+
+        let body = null;
+
+        try {
+          body = await response.json();
+        } catch {
+          body = null;
+        }
+
+        if (response.status === 409) {
+          this.conflicted = true;
+          this.syncStatus = 'conflict';
+          this.announce(this.strings.conflict);
+
+          return;
+        }
+
+        if (! response.ok) {
+          this.announce(body?.message ?? this.gateMessage);
+
+          return;
+        }
+
+        this.attemptRevision = body.revision;
+        this.attempt = {
+          ...this.attempt,
+          revision: body.revision,
+          current_page_id: body.current_page_id,
+          status: body.status,
+        };
+
+        if (body.status === 'completed') {
+          this.readOnly = true;
+          this.announce('Lesson complete.');
+
+          return;
+        }
+
+        const nextIndex = this.pages.findIndex((page) => page.page_id === body.current_page_id);
+
+        if (nextIndex >= 0) {
+          this.goTo(nextIndex);
+        }
+      } catch {
+        this.announce(this.strings.pending);
+      }
     },
 
     goBack() {
-      if (!this.canGoBack) {
+      if (! this.canGoBack) {
         return;
       }
 
@@ -163,7 +406,7 @@ export function lessonPlayer(manifest) {
 
     /** Skipping moves on without marking anything as satisfied. */
     skip() {
-      if (!this.allowSkip || this.isLastPage) {
+      if (! this.allowSkip || this.isLastPage) {
         return;
       }
 
@@ -212,9 +455,17 @@ export function lessonPlayer(manifest) {
       );
     },
 
+    announceSync(status) {
+      const message = this.strings[status];
+
+      if (message) {
+        this.announce(message);
+      }
+    },
+
     /** Clearing first guarantees the live region sees a change to report. */
     announce(message) {
-      if (!message) {
+      if (! message) {
         return;
       }
 
@@ -283,7 +534,7 @@ export function lessonPlayer(manifest) {
         element.removeAttribute('aria-current');
       });
 
-      if (!blockId || !segmentId) {
+      if (! blockId || ! segmentId) {
         return;
       }
 

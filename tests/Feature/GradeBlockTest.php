@@ -6,6 +6,7 @@ use App\Models\LessonBlock;
 use App\Models\LessonPage;
 use App\Models\LessonVersion;
 use App\Models\User;
+use App\Services\AttemptService;
 use App\Services\GradingToken;
 use App\Services\LessonPublisher;
 use App\Services\StudentManifest;
@@ -53,6 +54,14 @@ function correctQuizAnswers(array $compiledConfig): array
 
 function grade(string $code, string $blockId, mixed $token, mixed $response)
 {
+    $lesson = Lesson::query()->where('code', $code)->first();
+
+    // Grading requires an in_progress attempt; create one when the lesson is
+    // playable so existing suite cases need not visit the player first.
+    if ($lesson !== null && auth()->user() !== null) {
+        app(AttemptService::class)->resolveForPlayer(auth()->user(), $lesson);
+    }
+
     $payload = ['response' => $response];
 
     // Omit the key entirely when the token is null so "absent" is not
@@ -385,7 +394,7 @@ test('grading is bound to the version in the token, not the current publish', fu
     $v1Token = $v1Payload['grading_token'];
     $blockId = quizBlockId($v1Payload['pages']);
 
-    // v1 key says "a" is correct.
+    // v1 key says "a" is correct — creates an attempt pinned to v1.
     grade($lesson->code, $blockId, $v1Token, ['q1' => 'a'])
         ->assertOk()
         ->assertJson(['score' => 1, 'passed' => true]);
@@ -398,14 +407,20 @@ test('grading is bound to the version in the token, not the current publish', fu
 
     publishLesson($lesson);
 
-    // Same answer against the old token still grades with v1's key.
+    // Mid-attempt republish: the attempt stays on v1, so the v1 token still
+    // grades with v1's key and a v2 token is rejected as a pin mismatch.
     grade($lesson->code, $blockId, $v1Token, ['q1' => 'a'])
         ->assertOk()
         ->assertJson(['score' => 1, 'passed' => true]);
 
-    // The new token grades against v2, where "a" is now wrong.
     $v2Token = studentPayload($lesson)['grading_token'];
 
+    grade($lesson->code, $blockId, $v2Token, ['q1' => 'a'])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'The grading session is invalid.');
+
+    // A brand-new student is pinned to v2, where "a" is now wrong.
+    asStudent();
     grade($lesson->code, $blockId, $v2Token, ['q1' => 'a'])
         ->assertOk()
         ->assertJson(['score' => 0, 'passed' => false]);

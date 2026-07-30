@@ -1,4 +1,5 @@
 import { createPlacement } from './placement';
+import { seededShuffle } from './seeded-shuffle';
 
 /**
  * The Alpine side of a placement activity, shared by the matching and
@@ -9,6 +10,10 @@ import { createPlacement } from './placement';
  * student sees, the live-region wording (translated in Blade and passed in),
  * and the small amount of DOM work that focus management needs. It owns no
  * answer key and decides nothing about correctness.
+ *
+ * Bank shuffle stays here (not in PHP): Alpine draws the bank so the shuffled
+ * order is the DOM order, which keeps tab order and reading order matching
+ * what a student sees. Seeded via attempt.shuffle_seed + block_id.
  *
  * @param {{
  *   blockId: string,
@@ -37,6 +42,7 @@ export function placementActivity(config = {}) {
     blockId: config.blockId ?? '',
     pageId: config.pageId ?? '',
     strings: config.strings ?? {},
+    readOnly: false,
 
     /** The state the machine mutates and every binding reads. */
     state: {
@@ -62,15 +68,21 @@ export function placementActivity(config = {}) {
     disposeContributor: null,
 
     init() {
-      const itemIds = definition.items.map((item) => item.id);
+      const player = this.player();
+      this.readOnly = player?.readOnly === true;
 
-      // TODO Phase 3: seed the shuffle from the attempt so bank order
-      // survives a resume. Today a reload reorders the bank.
+      const itemIds = definition.items.map((item) => item.id);
+      const orderedIds =
+        config.shuffle === true
+          ? seededShuffle(itemIds, player?.shuffleSeed?.() ?? '', this.blockId)
+          : itemIds;
+
       placement = createPlacement(this.state, {
-        itemIds: config.shuffle === true ? shuffle(itemIds) : itemIds,
+        itemIds: orderedIds,
         slotIds: definition.slots.map((slot) => slot.id),
       });
 
+      this.restoreState(player?.stateFor?.(this.blockId));
       this.wasComplete = placement.isComplete();
 
       if (config.completionType === 'pass_activity') {
@@ -80,6 +92,50 @@ export function placementActivity(config = {}) {
             'isPassed() returns false and Continue will never enable on this page.',
         );
       }
+    },
+
+    player() {
+      const root = this.$el?.closest?.('[data-lesson-code]');
+
+      return root && window.Alpine ? window.Alpine.$data(root) : null;
+    },
+
+    serializeState() {
+      return { placements: { ...this.state.placements } };
+    },
+
+    restoreState(state) {
+      if (! state || typeof state !== 'object' || typeof state.placements !== 'object' || ! state.placements) {
+        return;
+      }
+
+      try {
+        for (const slot of definition.slots) {
+          const itemId = state.placements[slot.id];
+
+          if (itemId == null) {
+            continue;
+          }
+
+          if (typeof itemId !== 'string' || ! itemsById[itemId]) {
+            continue;
+          }
+
+          placement.select(itemId);
+          placement.place(slot.id);
+        }
+      } catch {
+        // Corrupt saved state → leave the activity empty.
+        placement.reset();
+      }
+    },
+
+    persist() {
+      if (this.readOnly) {
+        return;
+      }
+
+      this.player()?.queueSave?.(this.blockId, this.serializeState());
     },
 
     destroy() {
@@ -168,6 +224,10 @@ export function placementActivity(config = {}) {
 
     /** Picks a bank item up, or puts it down when it was already held. */
     toggleItem(itemId) {
+      if (this.readOnly) {
+        return;
+      }
+
       if (placement.select(itemId) === null) {
         this.pickedUpFrom = null;
         this.announce(this.strings.cancelled);
@@ -184,6 +244,10 @@ export function placementActivity(config = {}) {
      * touch, or keyboard: take what is held, or give back what it holds.
      */
     activateSlot(slotId, layer) {
+      if (this.readOnly) {
+        return;
+      }
+
       if (this.holding) {
         this.placeInto(slotId, layer);
 
@@ -198,6 +262,7 @@ export function placementActivity(config = {}) {
         return;
       }
 
+      this.persist();
       this.report([fill(this.strings.returned, { label: this.nameFor(returned) })]);
     },
 
@@ -225,13 +290,14 @@ export function placementActivity(config = {}) {
         message = fill(this.strings.moved_to, values);
       }
 
+      this.persist();
       this.report([message]);
       this.focusNextEmptySlot(slotId, layer);
     },
 
     /** Escape, or a second tap on the held item. */
     cancel() {
-      if (!this.holding) {
+      if (!this.holding || this.readOnly) {
         return;
       }
 
@@ -247,10 +313,15 @@ export function placementActivity(config = {}) {
     },
 
     resetActivity() {
+      if (this.readOnly) {
+        return;
+      }
+
       placement.reset();
 
       this.pickedUpFrom = null;
       this.wasComplete = false;
+      this.persist();
 
       this.announce(this.strings.reset);
     },
@@ -368,19 +439,6 @@ export function placementActivity(config = {}) {
       });
     },
   };
-}
-
-/** Fisher-Yates, on a copy: the caller's array is not ours to reorder. */
-function shuffle(values) {
-  const shuffled = [...values];
-
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(Math.random() * (index + 1));
-
-    [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
-  }
-
-  return shuffled;
 }
 
 /** Fills a translated template: fill(':label placed at :slot', {...}). */
