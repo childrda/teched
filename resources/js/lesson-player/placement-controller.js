@@ -237,6 +237,7 @@ export function placementActivity(config = {}) {
 
       this.pickedUpFrom = itemId;
       this.announce(fill(this.strings.picked_up, { label: this.nameFor(itemId) }));
+      this.bringNextEmptySlotIntoView();
     },
 
     /**
@@ -370,7 +371,57 @@ export function placementActivity(config = {}) {
     hold(itemId) {
       if (!this.isHolding(itemId)) {
         placement.select(itemId);
+        this.bringNextEmptySlotIntoView();
       }
+    },
+
+    /**
+     * On pickup, scroll the first empty slot into view when it is off screen.
+     * Uses the same next-empty definition as focus advance (wrap from the last
+     * slot). Scroll only — focus stays where the student put it.
+     */
+    bringNextEmptySlotIntoView() {
+      const slotIds = placement?.slotIds() ?? [];
+
+      if (slotIds.length === 0) {
+        return;
+      }
+
+      const next = placement.nextEmptySlot(slotIds[slotIds.length - 1]);
+
+      if (next === null) {
+        return;
+      }
+
+      this.$nextTick(() => {
+        const el = this.$root.querySelector(`[data-slot-id=${quote(next)}]`);
+
+        if (!el || typeof el.scrollIntoView !== 'function' || this.isElementInView(el)) {
+          return;
+        }
+
+        const reduceMotion =
+          typeof globalThis.matchMedia === 'function' &&
+          globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        el.scrollIntoView({
+          block: 'nearest',
+          behavior: reduceMotion ? 'auto' : 'smooth',
+        });
+      });
+    },
+
+    /** True when any part of the element intersects the viewport. */
+    isElementInView(el) {
+      if (typeof el.getBoundingClientRect !== 'function') {
+        return true;
+      }
+
+      const rect = el.getBoundingClientRect();
+      const vh = globalThis.innerHeight || globalThis.document?.documentElement?.clientHeight || 0;
+      const vw = globalThis.innerWidth || globalThis.document?.documentElement?.clientWidth || 0;
+
+      return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;
     },
 
     /**

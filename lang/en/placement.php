@@ -27,7 +27,7 @@ return [
     // Visible labels and headings.
     'bank_heading' => 'Items to place',
     'bank_empty' => 'Every item has been placed.',
-    'bank_hint' => 'Choose an item, then choose where it goes. You can also drag an item with a mouse.',
+    'bank_hint' => 'Tap an item, then tap where it goes. You can also drag an item with a mouse.',
     'empty_slot' => 'Place an item',
     'reset_activity' => 'Start over',
     'image_description' => 'Image description',

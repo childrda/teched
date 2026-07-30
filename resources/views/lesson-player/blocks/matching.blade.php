@@ -16,19 +16,22 @@
     player's own method, which hands back the registry's remove handle;
     captureDisposer() stores it and returns nothing, because an x-init
     expression that evaluates to a function has Alpine call it.
+
+    DOM order is bank then rows — the md two-column grid keeps that visual
+    order (bank left, targets right) without CSS order.
 --}}
-<div class="player-card space-y-5"
+<div class="player-card placement-layout placement-layout--matching"
      x-data="placementActivity(@js($activity))"
      x-init="captureDisposer(addContributor(@js($pageId), contributor()))"
      @keydown.escape="cancel()">
 
     @if (filled($config['instructions'] ?? null))
-        <p class="text-base/7" data-speech-id="instructions">{{ $config['instructions'] }}</p>
+        <p class="placement-layout-span text-base/7" data-speech-id="instructions">{{ $config['instructions'] }}</p>
     @endif
 
     @include('lesson-player.placement.bank', ['blockId' => $blockId])
 
-    <div data-placement-layer="rows">
+    <div class="placement-targets" data-placement-layer="rows">
         <h4 class="player-field-label" id="rows-heading-{{ $blockId }}">{{ __('placement.rows_heading') }}</h4>
 
         <ol class="mt-3 space-y-3" aria-labelledby="rows-heading-{{ $blockId }}">
@@ -42,5 +45,7 @@
         </ol>
     </div>
 
-    @include('lesson-player.placement.status')
+    <div class="placement-layout-span">
+        @include('lesson-player.placement.status')
+    </div>
 </div>

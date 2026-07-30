@@ -73,7 +73,44 @@
        Every state is drawn twice over — a symbol, a border style, and only
        then a colour — so that held, empty, and filled are all legible
        without seeing colour at all. Nothing here animates: dragging is the
-       browser's own, and no movement of ours is added on top of it. */
+       browser's own, and no movement of ours is added on top of it.
+
+       Sticky offset matches the non-sticky player header (none today) plus a
+       little air. Bank max-height is also the scroll-margin budget so
+       scrollIntoView / focus never parks a target under the stuck bank. */
+    .placement-layout {
+        --placement-sticky-top: 0.75rem;
+        --placement-bank-max-height: min(40vh, 14rem);
+        --placement-scroll-clearance: calc(
+            var(--placement-sticky-top) + var(--placement-bank-max-height) + 0.5rem
+        );
+
+        @apply space-y-5;
+    }
+
+    /* Matching only: bank left, rows right. Image labeling stays one column —
+       at the player's max-w-4xl a 1fr/2fr split leaves the WEL 6.1.1 diagram
+       ~565px wide, where hotspots 4 and 7 overlap their 44px tap targets. */
+    .placement-layout--matching {
+        @apply md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-start md:gap-6 md:space-y-0;
+    }
+
+    .placement-layout--matching > .placement-layout-span {
+        @apply md:col-span-2;
+    }
+
+    .placement-bank {
+        @apply sticky z-10 -mx-1 space-y-0 rounded-md bg-white px-1;
+        top: var(--placement-sticky-top);
+        max-height: var(--placement-bank-max-height);
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .placement-targets {
+        @apply min-w-0 space-y-5;
+    }
+
     .placement-item {
         @apply inline-flex min-h-11 items-center gap-2 rounded-md border-2 border-slate-600 bg-white px-3 py-2 text-base font-semibold text-slate-900 hover:bg-slate-100;
     }
@@ -85,10 +122,12 @@
     /* Stacked until there is room for the description and its slot side by side. */
     .placement-row {
         @apply flex flex-col items-start gap-3 rounded-md border-2 border-slate-300 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between;
+        scroll-margin-top: var(--placement-scroll-clearance);
     }
 
     .placement-slot {
         @apply inline-flex min-h-11 min-w-44 items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-600 bg-slate-50 px-3 py-2 text-base font-semibold text-slate-700 hover:bg-slate-100;
+        scroll-margin-top: var(--placement-scroll-clearance);
     }
 
     .placement-slot.is-filled {
@@ -110,6 +149,7 @@
     /* Percentage positions, with the coordinate at the marker's centre. */
     .placement-hotspot {
         @apply absolute inline-flex max-w-36 min-h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1 rounded-full border-2 border-dashed border-slate-900 bg-white px-2 text-sm font-bold text-slate-900;
+        scroll-margin-top: var(--placement-scroll-clearance);
     }
 
     .placement-hotspot.is-filled {

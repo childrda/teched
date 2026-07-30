@@ -5,8 +5,11 @@
     shuffled in the DOM: tab order, reading order, and what a student sees
     all stay the same sequence. Every item is a real button, so Enter and
     Space pick it up without a keydown handler of our own.
+
+    Sticky and height-capped so the bank stays in view while targets scroll,
+    without eating the whole viewport when many items are left.
 --}}
-<div>
+<div class="placement-bank">
     <h4 class="player-field-label" id="bank-heading-{{ $blockId }}">{{ __('placement.bank_heading') }}</h4>
     <p class="mt-1 text-sm text-slate-700">{{ __('placement.bank_hint') }}</p>
 

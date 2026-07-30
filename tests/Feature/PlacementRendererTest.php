@@ -82,6 +82,34 @@ test('the seeded activity pages render through their own partials', function () 
     expect(substr_count($html, 'This content is currently unavailable'))->toBe($awaitingRenderer);
 });
 
+test('the bank precedes the targets in both placement templates', function () {
+    $html = $this->get('/lessons/' . weldingLesson()->code)->assertOk()->getContent();
+
+    foreach (['matching', 'image_labeling'] as $type) {
+        expect(preg_match(
+            '/data-block-type="' . $type . '".*?(placement-bank).*?(placement-targets)/s',
+            $html
+        ))->toBe(1, "{$type}: bank must still precede targets in the DOM");
+    }
+
+    // Matching alone takes the two-column layout class; image labeling does
+    // not — its WEL diagram hotspots collide under a 1fr/2fr split.
+    expect($html)->toContain('placement-layout--matching')
+        ->and(substr_count($html, 'placement-layout--matching'))->toBe(1);
+});
+
+test('the tap-to-place hint is translated player chrome near the bank', function () {
+    $html = $this->get('/lessons/' . weldingLesson()->code)->assertOk()->getContent();
+    $hint = __('placement.bank_hint');
+
+    expect($hint)->not->toBe('placement.bank_hint')
+        ->and(substr_count($html, e($hint)))->toBe(2)
+        ->and(file_get_contents(resource_path('views/lesson-player/placement/bank.blade.php')))
+        ->toContain("__('placement.bank_hint')")
+        ->and(file_get_contents(resource_path('views/lesson-player/placement/bank.blade.php')))
+        ->not->toContain('Tap an item');
+});
+
 test('both layers of the image activity place into the same slots', function () {
     $html = $this->get('/lessons/' . weldingLesson()->code)->assertOk()->getContent();
 

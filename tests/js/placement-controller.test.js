@@ -432,3 +432,111 @@ describe('when the diagram does not load', () => {
         expect(console.warn).toHaveBeenCalledOnce();
     });
 });
+
+describe('bringing the next empty slot into view on pickup', () => {
+    function slotEl({ top, bottom, left = 0, right = 100 } = {}) {
+        return {
+            getBoundingClientRect: () => ({
+                top,
+                bottom,
+                left,
+                right,
+                width: right - left,
+                height: bottom - top,
+            }),
+            scrollIntoView: vi.fn(),
+            focus: () => focused.push('should-not-focus-from-scroll'),
+        };
+    }
+
+    function withSlot(component, el) {
+        component.$root = {
+            querySelector: () => el,
+        };
+    }
+
+    beforeEach(() => {
+        vi.stubGlobal('innerHeight', 768);
+        vi.stubGlobal('innerWidth', 1366);
+        vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
+    });
+
+    it('scrolls the first empty slot into view when it is off screen', () => {
+        const component = activity();
+        const el = slotEl({ top: 900, bottom: 960 });
+
+        withSlot(component, el);
+        component.toggleItem('i1');
+
+        expect(el.scrollIntoView).toHaveBeenCalledOnce();
+        expect(el.scrollIntoView).toHaveBeenCalledWith({
+            block: 'nearest',
+            behavior: 'smooth',
+        });
+        expect(focused).toEqual([]);
+    });
+
+    it('does not scroll when the first empty slot is already visible', () => {
+        const component = activity();
+        const el = slotEl({ top: 120, bottom: 180 });
+
+        withSlot(component, el);
+        component.toggleItem('i1');
+
+        expect(el.scrollIntoView).not.toHaveBeenCalled();
+        expect(focused).toEqual([]);
+    });
+
+    it('uses auto behavior when the student prefers reduced motion', () => {
+        vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+
+        const component = activity();
+        const el = slotEl({ top: 900, bottom: 960 });
+
+        withSlot(component, el);
+        component.toggleItem('i1');
+
+        expect(el.scrollIntoView).toHaveBeenCalledWith({
+            block: 'nearest',
+            behavior: 'auto',
+        });
+    });
+
+    it('scrolls on dragstart through the same path', () => {
+        const component = activity();
+        const el = slotEl({ top: 900, bottom: 960 });
+        const dataTransfer = {
+            setData: vi.fn(),
+            effectAllowed: 'none',
+        };
+
+        withSlot(component, el);
+        component.dragItem('i1', { dataTransfer });
+
+        expect(el.scrollIntoView).toHaveBeenCalledOnce();
+        expect(focused).toEqual([]);
+    });
+
+    it('leaves 2B focus advance alone after a placement', () => {
+        const component = activity();
+        const el = slotEl({ top: 900, bottom: 960 });
+
+        withSlot(component, el);
+        component.toggleItem('i1');
+        el.scrollIntoView.mockClear();
+        focused = [];
+
+        // Restore the focus stub the suite uses for placement advance.
+        component.$root = {
+            querySelector: (selector) => ({
+                focus: () => focused.push(selector),
+                scrollIntoView: vi.fn(),
+                getBoundingClientRect: () => ({ top: 0, bottom: 10, left: 0, right: 10 }),
+            }),
+        };
+
+        component.activateSlot('s1', 'rows');
+
+        expect(focused).toEqual(['[data-placement-layer="rows"] [data-slot-id="s2"]']);
+    });
+});
