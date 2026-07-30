@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Blocks\BlockTypeRegistry;
 use App\Enums\LessonStatus;
 use App\Enums\PageCompletionType;
+use App\Exceptions\AuthoringPayloadException;
 use App\Exceptions\AuthoringValidationException;
 use App\Exceptions\StaleLessonEditException;
+use App\Exceptions\StalePageEditException;
 use App\Models\Lesson;
 use App\Models\LessonBlock;
 use App\Models\LessonOwnerChange;
@@ -23,6 +25,32 @@ use Opis\JsonSchema\Validator as JsonSchemaValidator;
 
 class LessonAuthoringService
 {
+    /**
+     * Keys that must never appear in a savePage() payload. Identity and
+     * lesson membership come from the route / loaded models only.
+     *
+     * @var list<string>
+     */
+    private const SAVE_PAGE_FORBIDDEN_KEYS = [
+        'lesson_id',
+        'page_id',
+        'pages',
+        'created_at',
+        'code',
+        'subject',
+        'grade_range',
+        'learning_target',
+        'success_criteria',
+        'standards',
+        'status',
+        'current_version',
+        'has_unpublished_changes',
+        'created_by_user_id',
+        'updated_by',
+        'uuid',
+        'description',
+    ];
+
     public function __construct(
         private readonly BlockTypeRegistry $registry,
         private readonly DraftConfigValidator $draftValidator,
@@ -30,11 +58,15 @@ class LessonAuthoringService
         private readonly AuthoringErrorFormatter $errorFormatter,
         private readonly LessonPublisher $publisher,
         private readonly LessonCompiler $compiler,
+        private readonly LessonContentDuplicator $duplicator,
     ) {
     }
 
     /**
      * Create a new draft lesson owned by $user.
+     *
+     * Optional pages[] is for seeding / tests only — the Filament create
+     * form no longer embeds the page graph.
      *
      * @param  array<string, mixed>  $data
      */
@@ -60,14 +92,21 @@ class LessonAuthoringService
                 'updated_by' => $user->getKey(),
             ])->save();
 
-            $this->syncGraph($lesson, $data['pages'] ?? [], $user, expectedUpdatedAt: null);
+            if (array_key_exists('pages', $data)) {
+                $this->syncGraph($lesson, $data['pages'] ?? [], $user);
+            }
 
             return $lesson->fresh(['pages.blocks']);
         });
     }
 
     /**
-     * Persist authoring form state for an existing lesson.
+     * Persist lesson metadata only.
+     *
+     * Concurrency token: lessons.updated_at — protects lesson metadata AND
+     * page ordering. This method must never reconcile the page graph; absent
+     * or empty pages[] must not delete pages. Use savePage() / createPage() /
+     * deletePage() / reorderPages() for page-scoped work.
      *
      * @param  array<string, mixed>  $data
      * @return array{lesson: Lesson, warnings: list<string>}
@@ -77,20 +116,7 @@ class LessonAuthoringService
         return DB::transaction(function () use ($lesson, $data, $user) {
             /** @var Lesson $locked */
             $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
-
-            $expected = $data['updated_at'] ?? null;
-            if ($expected === null || $locked->updated_at === null) {
-                throw StaleLessonEditException::make();
-            }
-
-            $expectedAt = \Illuminate\Support\Carbon::parse($expected);
-            // MySQL datetime is second-precision; equal timestamps mean "same
-            // known version" for this phase's optimistic lock.
-            if ($locked->updated_at->timestamp !== $expectedAt->timestamp) {
-                throw StaleLessonEditException::make();
-            }
-
-            $warnings = $this->syncGraph($locked, $data['pages'] ?? [], $user, expectedUpdatedAt: $expected);
+            $this->assertLessonRevision($locked, $data['updated_at'] ?? null);
 
             $locked->forceFill([
                 'code' => $data['code'] ?? $locked->code,
@@ -109,10 +135,212 @@ class LessonAuthoringService
                 'updated_by' => $user->getKey(),
             ])->save();
 
+            // Flag only — must not bump lessons.updated_at again.
+            $locked->markUnpublishedChanges();
+
             return [
                 'lesson' => $locked->fresh(['pages.blocks']),
-                'warnings' => $warnings,
+                'warnings' => [],
             ];
+        });
+    }
+
+    /**
+     * Create an empty page and append it to the lesson.
+     *
+     * Concurrency token: lessons.updated_at — adding a page changes the page
+     * graph. Does not use lesson_pages.updated_at (the row does not exist yet).
+     *
+     * lessons.has_unpublished_changes is a flag, not a concurrency token, and
+     * is toggled without changing lessons.updated_at (via markUnpublishedChanges).
+     */
+    public function createPage(Lesson $lesson, User $user, ?string $expectedUpdatedAt = null, array $attributes = []): LessonPage
+    {
+        return DB::transaction(function () use ($lesson, $user, $expectedUpdatedAt, $attributes) {
+            /** @var Lesson $locked */
+            $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+
+            $pageId = is_string($attributes['page_id'] ?? null) && $attributes['page_id'] !== ''
+                ? $attributes['page_id']
+                : (string) Str::ulid();
+
+            $max = (int) $locked->pages()->max('position');
+            $allowReadAloud = (bool) ($locked->settings['default_allow_read_aloud']
+                ?? Lesson::DEFAULT_SETTINGS['default_allow_read_aloud']);
+
+            $page = new LessonPage;
+            $page->setRelation('lesson', $locked);
+            $page->forceFill([
+                'lesson_id' => $locked->getKey(),
+                'page_id' => $pageId,
+                'position' => $max + 1,
+                'title' => $attributes['title'] ?? 'Untitled page',
+                'completion_type' => PageCompletionType::tryFrom((string) ($attributes['completion_type'] ?? ''))
+                    ?? PageCompletionType::View,
+                'estimated_minutes' => $attributes['estimated_minutes'] ?? null,
+                'settings' => array_merge(LessonPage::DEFAULT_SETTINGS, [
+                    'allow_read_aloud' => $allowReadAloud,
+                ], is_array($attributes['settings'] ?? null) ? $attributes['settings'] : []),
+            ])->save();
+
+            // Bump lessons.updated_at — page graph changed.
+            $locked->forceFill(['updated_by' => $user->getKey()])->save();
+            $locked->markUnpublishedChanges();
+
+            return $page->fresh('blocks');
+        });
+    }
+
+    /**
+     * Persist one page's settings and blocks. Never touches sibling pages.
+     *
+     * Concurrency token: lesson_pages.updated_at — protects that page's
+     * settings and blocks. Must NOT bump lessons.updated_at (two teachers on
+     * different pages must not collide; an open lesson-metadata form must
+     * stay valid).
+     *
+     * lessons.has_unpublished_changes is a flag, not a concurrency token.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{page: LessonPage, warnings: list<string>}
+     */
+    public function savePage(LessonPage $page, array $data, User $user): array
+    {
+        $this->rejectForbiddenSavePageKeys($data);
+
+        return DB::transaction(function () use ($page, $data, $user) {
+            /** @var LessonPage $locked */
+            $locked = LessonPage::query()->lockForUpdate()->findOrFail($page->getKey());
+            $this->assertPageRevision($locked, $data['updated_at'] ?? null);
+
+            $normalized = $this->normalizeIncomingGraph([[
+                'page_id' => $locked->page_id,
+                'title' => $data['title'] ?? $locked->title,
+                'completion_type' => $data['completion_type'] ?? $locked->completion_type?->value,
+                'estimated_minutes' => array_key_exists('estimated_minutes', $data)
+                    ? $data['estimated_minutes']
+                    : $locked->estimated_minutes,
+                'settings' => is_array($data['settings'] ?? null)
+                    ? $data['settings']
+                    : ($locked->settings ?? []),
+                'blocks' => $data['blocks'] ?? [],
+            ]]);
+
+            if ($normalized['errors'] !== []) {
+                throw AuthoringValidationException::with($normalized['errors'], $normalized['warnings']);
+            }
+
+            $pageData = $normalized['pages'][0];
+
+            $locked->forceFill([
+                'title' => $pageData['title'],
+                'completion_type' => $pageData['completion_type'],
+                'estimated_minutes' => $pageData['estimated_minutes'],
+                'settings' => array_merge(LessonPage::DEFAULT_SETTINGS, $pageData['settings']),
+            ])->save();
+
+            $this->persistBlocks($locked, $pageData['blocks']);
+
+            // Page model / block events already flag unpublished changes via
+            // query-builder updates that leave lessons.updated_at alone.
+            $locked->lesson?->markUnpublishedChanges();
+
+            return [
+                'page' => $locked->fresh('blocks'),
+                'warnings' => $normalized['warnings'],
+            ];
+        });
+    }
+
+    /**
+     * Delete an authoring page row (and its blocks via FK cascade). Published
+     * manifests and pinned attempts are untouched.
+     *
+     * Concurrency token: lessons.updated_at — deleting a page changes the
+     * page graph.
+     */
+    public function deletePage(Lesson $lesson, LessonPage $page, User $user, ?string $expectedUpdatedAt = null): void
+    {
+        if ((int) $page->lesson_id !== (int) $lesson->getKey()) {
+            throw AuthoringPayloadException::forbidden('lesson_id');
+        }
+
+        DB::transaction(function () use ($lesson, $page, $user, $expectedUpdatedAt) {
+            /** @var Lesson $locked */
+            $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+
+            /** @var LessonPage $lockedPage */
+            $lockedPage = LessonPage::query()
+                ->where('lesson_id', $locked->getKey())
+                ->whereKey($page->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedPage->delete();
+
+            $remainingIds = LessonPage::query()
+                ->where('lesson_id', $locked->getKey())
+                ->orderBy('position')
+                ->pluck('page_id')
+                ->all();
+
+            if ($remainingIds !== []) {
+                LessonPage::reorderWithin($locked->fresh(), $remainingIds);
+            }
+
+            $locked->forceFill(['updated_by' => $user->getKey()])->save();
+            $locked->markUnpublishedChanges();
+        });
+    }
+
+    /**
+     * Reorder pages via two-phase LessonPage::reorderWithin. Never delete or
+     * recreate pages — page_id is referenced by pinned manifests and attempts.
+     *
+     * Concurrency token: lessons.updated_at — page ordering is lesson-scoped.
+     *
+     * @param  list<string>  $orderedPageIds
+     */
+    public function reorderPages(Lesson $lesson, array $orderedPageIds, User $user, ?string $expectedUpdatedAt = null): Lesson
+    {
+        return DB::transaction(function () use ($lesson, $orderedPageIds, $user, $expectedUpdatedAt) {
+            /** @var Lesson $locked */
+            $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+
+            LessonPage::reorderWithin($locked, $orderedPageIds);
+
+            $locked->forceFill(['updated_by' => $user->getKey()])->save();
+            $locked->markUnpublishedChanges();
+
+            return $locked->fresh(['pages.blocks']);
+        });
+    }
+
+    /**
+     * Duplicate a page within the same lesson (fresh identifiers).
+     *
+     * Concurrency token: lessons.updated_at — duplication changes the page graph.
+     */
+    public function duplicatePage(Lesson $lesson, LessonPage $sourcePage, User $user, ?string $expectedUpdatedAt = null): LessonPage
+    {
+        if ((int) $sourcePage->lesson_id !== (int) $lesson->getKey()) {
+            throw AuthoringPayloadException::forbidden('lesson_id');
+        }
+
+        return DB::transaction(function () use ($lesson, $sourcePage, $user, $expectedUpdatedAt) {
+            /** @var Lesson $locked */
+            $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
+            $this->assertLessonRevision($locked, $expectedUpdatedAt ?? $locked->updated_at?->toISOString());
+
+            $copy = $this->duplicator->duplicatePageWithin($locked, $sourcePage);
+
+            $locked->forceFill(['updated_by' => $user->getKey()])->save();
+            $locked->markUnpublishedChanges();
+
+            return $copy->fresh('blocks');
         });
     }
 
@@ -255,14 +483,12 @@ class LessonAuthoringService
     }
 
     /**
-     * Shape lesson + pages + blocks for Filament form fill.
+     * Shape lesson metadata for the Filament lesson form (no pages / blocks).
      *
      * @return array<string, mixed>
      */
     public function toFormState(Lesson $lesson): array
     {
-        $lesson->loadMissing(['pages.blocks']);
-
         return [
             'code' => $lesson->code,
             'title' => $lesson->title,
@@ -281,39 +507,98 @@ class LessonAuthoringService
             'status' => $lesson->status?->value,
             'current_version' => $lesson->current_version,
             'has_unpublished_changes' => $lesson->has_unpublished_changes,
+            // lessons.updated_at — lesson metadata + page ordering token.
             'updated_at' => $lesson->updated_at?->toISOString(),
-            'pages' => $lesson->pages->map(function (LessonPage $page) {
-                return [
-                    'page_id' => $page->page_id,
-                    'title' => $page->title,
-                    'completion_type' => $page->completion_type?->value,
-                    'estimated_minutes' => $page->estimated_minutes,
-                    'settings' => array_merge(LessonPage::DEFAULT_SETTINGS, $page->settings ?? []),
-                    'blocks' => $page->blocks->map(function (LessonBlock $block) {
-                        $typeKey = is_string($block->type) ? $block->type : $block->type->value;
-                        $config = $this->idReconciler->forForm($typeKey, $block->config ?? []);
+        ];
+    }
 
-                        return [
-                            'type' => $typeKey,
-                            'data' => array_merge($config, [
-                                'block_id' => $block->block_id,
-                                'grading' => $block->grading,
-                            ]),
-                        ];
-                    })->values()->all(),
+    /**
+     * Shape one page + its blocks for the Filament page form.
+     *
+     * @return array<string, mixed>
+     */
+    public function toPageFormState(LessonPage $page): array
+    {
+        $page->loadMissing('blocks');
+
+        return [
+            'title' => $page->title,
+            'completion_type' => $page->completion_type?->value,
+            'estimated_minutes' => $page->estimated_minutes,
+            'settings' => array_merge(LessonPage::DEFAULT_SETTINGS, $page->settings ?? []),
+            // lesson_pages.updated_at — page settings + blocks token.
+            'updated_at' => $page->updated_at?->toISOString(),
+            'blocks' => $page->blocks->map(function (LessonBlock $block) {
+                $typeKey = is_string($block->type) ? $block->type : $block->type->value;
+                $config = $this->idReconciler->forForm($typeKey, $block->config ?? []);
+
+                return [
+                    'type' => $typeKey,
+                    'data' => array_merge($config, [
+                        'block_id' => $block->block_id,
+                        'grading' => $block->grading,
+                    ]),
                 ];
             })->values()->all(),
         ];
     }
 
     /**
+     * lessons.updated_at concurrency check. Equal second-precision timestamps
+     * mean "same known version" for this phase's optimistic lock.
+     */
+    private function assertLessonRevision(Lesson $locked, mixed $expected): void
+    {
+        if ($expected === null || $locked->updated_at === null) {
+            throw StaleLessonEditException::make();
+        }
+
+        $expectedAt = \Illuminate\Support\Carbon::parse($expected);
+        // MySQL datetime is second-precision; equal timestamps mean "same
+        // known version" for this phase's optimistic lock.
+        if ($locked->updated_at->timestamp !== $expectedAt->timestamp) {
+            throw StaleLessonEditException::make();
+        }
+    }
+
+    /**
+     * lesson_pages.updated_at concurrency check.
+     */
+    private function assertPageRevision(LessonPage $locked, mixed $expected): void
+    {
+        if ($expected === null || $locked->updated_at === null) {
+            throw StalePageEditException::make();
+        }
+
+        $expectedAt = \Illuminate\Support\Carbon::parse($expected);
+        if ($locked->updated_at->timestamp !== $expectedAt->timestamp) {
+            throw StalePageEditException::make();
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function rejectForbiddenSavePageKeys(array $data): void
+    {
+        foreach (self::SAVE_PAGE_FORBIDDEN_KEYS as $key) {
+            if (array_key_exists($key, $data)) {
+                throw AuthoringPayloadException::forbidden($key);
+            }
+        }
+    }
+
+    /**
      * Normalize and draft-validate the entire graph in memory first. If any
      * block fails, write nothing and return every addressed error together.
+     *
+     * Used by create() seeding and internally by savePage() for a one-page
+     * graph. Never called from metadata-only save().
      *
      * @param  list<array<string, mixed>>  $pagesData
      * @return list<string> warnings
      */
-    private function syncGraph(Lesson $lesson, array $pagesData, User $user, ?string $expectedUpdatedAt): array
+    private function syncGraph(Lesson $lesson, array $pagesData, User $user): array
     {
         $normalized = $this->normalizeIncomingGraph($pagesData);
 

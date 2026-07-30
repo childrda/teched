@@ -86,13 +86,21 @@ class Lesson extends Model
     }
 
     /**
-     * Flag that authoring rows changed since the last publish. Uses a direct
-     * query so no model events re-fire; never touches status.
+     * Flag that authoring rows changed since the last publish.
+     *
+     * lessons.has_unpublished_changes is a flag, not a concurrency token.
+     * A query-builder update is required so toggling it does not bump
+     * lessons.updated_at (which protects lesson metadata and page ordering).
+     * Page settings/blocks use lesson_pages.updated_at instead.
      */
     public function markUnpublishedChanges(): void
     {
+        // toBase(): Eloquent Builder::update() would add updated_at via
+        // addUpdatedAtColumn(), which must not happen — this flag is not a
+        // concurrency token.
         static::query()
             ->whereKey($this->getKey())
+            ->toBase()
             ->update(['has_unpublished_changes' => true]);
 
         $this->has_unpublished_changes = true;

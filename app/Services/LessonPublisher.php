@@ -43,8 +43,14 @@ class LessonPublisher
             $locked->forceFill([
                 'current_version' => $nextVersion,
                 'status' => LessonStatus::Published,
-                'has_unpublished_changes' => false,
             ])->save();
+
+            // Flag only — clearing unpublished must not bump lessons.updated_at.
+            // Eloquent Builder::update() would add updated_at; use toBase().
+            Lesson::query()
+                ->whereKey($locked->getKey())
+                ->toBase()
+                ->update(['has_unpublished_changes' => false]);
 
             $lesson->refresh();
 

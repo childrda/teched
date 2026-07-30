@@ -5,6 +5,7 @@ use App\Exceptions\AuthoringValidationException;
 use App\Filament\Resources\Lessons\Pages\CreateLesson;
 use App\Filament\Resources\Lessons\Pages\EditLesson;
 use App\Filament\Resources\Lessons\Pages\ListLessons;
+use App\Filament\Resources\Lessons\Resources\LessonPages\Pages\EditLessonPage;
 use App\Models\Lesson;
 use App\Models\LessonAttempt;
 use App\Models\LessonBlock;
@@ -65,15 +66,31 @@ test('filament list create and edit pages render', function () {
         ->test(CreateLesson::class)
         ->assertSuccessful();
 
-    $edit = Livewire::actingAs($teacher)
+    $lessonEdit = Livewire::actingAs($teacher)
         ->test(EditLesson::class, ['record' => $lesson->getKey()])
+        ->assertSuccessful();
+
+    // Lesson screen: pages table, no block Builder.
+    $lessonHtml = $lessonEdit->html();
+    expect(str_contains($lessonHtml, 'wire:id'))->toBeTrue()
+        ->and(str_contains($lessonHtml, 'Add page') || str_contains($lessonHtml, 'Pages'))->toBeTrue()
+        ->and(str_contains($lessonHtml, 'Term A'))->toBeFalse();
+
+    $page = $lesson->pages()->whereHas('blocks', fn ($q) => $q->where('type', 'matching'))->first()
+        ?? $lesson->pages()->first();
+
+    $pageEdit = Livewire::actingAs($teacher)
+        ->test(EditLessonPage::class, [
+            'record' => $page->getKey(),
+            'parentRecord' => $lesson,
+        ])
         ->assertSuccessful();
 
     // Avoid Livewire assertSee — failure dumps the full Filament HTML and
     // hangs PHPUnit on Windows. Check needles with a short expect message.
-    $html = $edit->html();
+    $html = $pageEdit->html();
     foreach (['Term A', 'Correct answer', 'Label'] as $needle) {
-        expect(str_contains($html, $needle))->toBeTrue("EditLesson HTML missing \"{$needle}\"");
+        expect(str_contains($html, $needle))->toBeTrue("EditLessonPage HTML missing \"{$needle}\"");
     }
 });
 
@@ -82,13 +99,28 @@ test('filament edit page renders the seeded WEL lesson with every interaction ty
     $lesson = Lesson::query()->where('code', 'WEL-6.1.1')->firstOrFail();
     $teacher = User::query()->findOrFail($lesson->created_by_user_id);
 
-    $edit = Livewire::actingAs($teacher)
+    $lessonEdit = Livewire::actingAs($teacher)
         ->test(EditLesson::class, ['record' => $lesson->getKey()])
         ->assertSuccessful();
 
-    $html = $edit->html();
+    // Compact pages table — no block Builder on the lesson screen.
+    $lessonHtml = $lessonEdit->html();
+    expect(str_contains($lessonHtml, 'fi-fo-builder'))->toBeFalse('Lesson edit must not embed the block Builder');
+
+    $matchingPage = $lesson->pages()
+        ->whereHas('blocks', fn ($q) => $q->where('type', 'matching'))
+        ->firstOrFail();
+
+    $pageEdit = Livewire::actingAs($teacher)
+        ->test(EditLessonPage::class, [
+            'record' => $matchingPage->getKey(),
+            'parentRecord' => $lesson,
+        ])
+        ->assertSuccessful();
+
+    $html = $pageEdit->html();
     foreach (['Electrode', 'Weld Pool'] as $needle) {
-        expect(str_contains($html, $needle))->toBeTrue("WEL EditLesson HTML missing \"{$needle}\"");
+        expect(str_contains($html, $needle))->toBeTrue("WEL EditLessonPage HTML missing \"{$needle}\"");
     }
 });
 
@@ -294,51 +326,45 @@ test('save collects errors across multiple blocks and writes nothing', function 
     $teacher = asTeacher();
     $service = app(LessonAuthoringService::class);
     $lesson = phase5bOwnedLesson($teacher);
-    $pageId = $lesson->pages->first()->page_id;
-    $blockId = $lesson->pages->first()->blocks->first()->block_id;
-    $titleBefore = $lesson->title;
+    $page = $lesson->pages->first();
+    $blockId = $page->blocks->first()->block_id;
+    $pageTitleBefore = $page->title;
 
     try {
-        $service->save($lesson->fresh(), [
-            'code' => $lesson->code,
-            'title' => 'Should not persist',
-            'settings' => $lesson->settings,
-            'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-            'pages' => [[
-                'page_id' => $pageId,
-                'title' => 'Multi error page',
-                'completion_type' => 'view',
-                'settings' => LessonPage::DEFAULT_SETTINGS,
-                'blocks' => [
-                    [
-                        'type' => 'quiz',
-                        'data' => [
-                            'block_id' => $blockId,
-                            'unknown_key' => true,
-                            'questions' => 'bad',
-                            'grading' => null,
-                        ],
-                    ],
-                    [
-                        'type' => 'matching',
-                        'data' => [
-                            'block_id' => (string) Str::ulid(),
-                            'also_unknown' => 1,
-                            'bank' => 'nope',
-                            'grading' => null,
-                        ],
-                    ],
-                    [
-                        'type' => 'cer',
-                        'data' => [
-                            'block_id' => (string) Str::ulid(),
-                            'bad_field' => true,
-                            'fields' => 'x',
-                            'grading' => null,
-                        ],
+        $service->savePage($page, [
+            'updated_at' => $page->fresh()->updated_at->toISOString(),
+            'title' => 'Multi error page',
+            'completion_type' => 'view',
+            'settings' => LessonPage::DEFAULT_SETTINGS,
+            'blocks' => [
+                [
+                    'type' => 'quiz',
+                    'data' => [
+                        'block_id' => $blockId,
+                        'unknown_key' => true,
+                        'questions' => 'bad',
+                        'grading' => null,
                     ],
                 ],
-            ]],
+                [
+                    'type' => 'matching',
+                    'data' => [
+                        'block_id' => (string) Str::ulid(),
+                        'also_unknown' => 1,
+                        'bank' => 'nope',
+                        'grading' => null,
+                    ],
+                ],
+                [
+                    'type' => 'cer',
+                    'data' => [
+                        'block_id' => (string) Str::ulid(),
+                        'bad_field' => true,
+                        'fields' => 'x',
+                        'grading' => null,
+                    ],
+                ],
+            ],
         ], $teacher);
         expect(false)->toBeTrue('expected validation failure');
     } catch (AuthoringValidationException $e) {
@@ -349,7 +375,7 @@ test('save collects errors across multiple blocks and writes nothing', function 
             ->and($joined)->toContain('Multi error page');
     }
 
-    expect($lesson->fresh()->title)->toBe($titleBefore);
+    expect($page->fresh()->title)->toBe($pageTitleBefore);
 });
 
 test('admin can reassign owner with manual audit; owner cannot', function () {

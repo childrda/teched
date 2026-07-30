@@ -145,25 +145,39 @@ test('stable page and block ids survive reorder, insert, and edit', function () 
     ]);
 
     asTeacher($teacher);
-    $form = $service->toFormState($lesson->fresh());
-    // Reorder pages B then A; insert a block between.
+    // Reorder pages B then A; insert a block on B; edit A — page-scoped APIs.
     $blockMid = (string) Str::ulid();
-    $pages = [
-        authoringPagePayload('B', [
+    $service->reorderPages(
+        $lesson->fresh(),
+        [$pageB, $pageA],
+        $teacher,
+        $lesson->fresh()->updated_at->toISOString(),
+    );
+
+    $pageBModel = LessonPage::query()->where('page_id', $pageB)->firstOrFail();
+    $service->savePage($pageBModel, [
+        'updated_at' => $pageBModel->fresh()->updated_at->toISOString(),
+        'title' => 'B',
+        'completion_type' => PageCompletionType::View->value,
+        'settings' => LessonPage::DEFAULT_SETTINGS,
+        'blocks' => [
             richTextBlock($block2),
             richTextBlock($blockMid),
-        ], $pageB),
-        authoringPagePayload('A edited', [
+        ],
+    ], $teacher);
+
+    $pageAModel = LessonPage::query()->where('page_id', $pageA)->firstOrFail();
+    $service->savePage($pageAModel, [
+        'updated_at' => $pageAModel->fresh()->updated_at->toISOString(),
+        'title' => 'A edited',
+        'completion_type' => PageCompletionType::View->value,
+        'settings' => LessonPage::DEFAULT_SETTINGS,
+        'blocks' => [
             authoringBlockPayload('rich_text', ['html' => '<p>Changed</p>'], null, $block1),
-        ], $pageA),
-    ];
+        ],
+    ], $teacher);
 
-    $result = $service->save($lesson->fresh(), array_merge($form, [
-        'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-        'pages' => $pages,
-    ]), $teacher);
-
-    $fresh = $result['lesson'];
+    $fresh = $lesson->fresh(['pages.blocks']);
     $pageIds = $fresh->pages->pluck('page_id')->all();
     $blockIds = $fresh->pages->flatMap->blocks->pluck('block_id')->all();
 
@@ -227,16 +241,17 @@ test('removing a block preserves neighbours and does not cascade student rows', 
     ]);
 
     asTeacher($teacher);
-    $form = $service->toFormState($lesson->fresh());
-    $service->save($lesson->fresh(), array_merge($form, [
-        'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-        'pages' => [
-            authoringPagePayload('P', [
-                richTextBlock($a),
-                richTextBlock($c),
-            ], $pageId),
+    $page = LessonPage::query()->where('page_id', $pageId)->firstOrFail();
+    $service->savePage($page, [
+        'updated_at' => $page->fresh()->updated_at->toISOString(),
+        'title' => 'P',
+        'completion_type' => PageCompletionType::View->value,
+        'settings' => LessonPage::DEFAULT_SETTINGS,
+        'blocks' => [
+            richTextBlock($a),
+            richTextBlock($c),
         ],
-    ]), $teacher);
+    ], $teacher);
 
     $ids = $lesson->fresh()->pages->first()->blocks->pluck('block_id')->all();
     expect($ids)->toBe([$a, $c])
@@ -291,35 +306,36 @@ test('quiz option and cer field reorder preserves nested ids and answer_id', fun
         ],
     ], $teacher);
 
-    $form = $service->toFormState($lesson->fresh());
-    $service->save($lesson->fresh(), array_merge($form, [
-        'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-        'pages' => [
-            authoringPagePayload('P', [
-                authoringBlockPayload('quiz', [
-                    'shuffle_questions' => false,
-                    'questions' => [[
-                        'id' => $qId,
-                        'prompt' => 'Q?',
-                        'options' => [
-                            ['id' => $optB, 'text' => 'B'],
-                            ['id' => $optA, 'text' => 'A'],
-                        ],
-                        'answer_id' => $optA,
-                        'feedback' => null,
-                        'source_ref' => null,
-                    ]],
-                ], fullGradingShape(), $quizId),
-                authoringBlockPayload('cer', [
-                    'scenario_html' => '<p>S</p>',
-                    'fields' => [
-                        ['id' => $fieldEvidence, 'label' => 'Evidence', 'placeholder' => null, 'min_length' => null],
-                        ['id' => $fieldClaim, 'label' => 'Claim', 'placeholder' => null, 'min_length' => null],
+    $page = LessonPage::query()->where('page_id', $pageId)->firstOrFail();
+    $service->savePage($page, [
+        'updated_at' => $page->fresh()->updated_at->toISOString(),
+        'title' => 'P',
+        'completion_type' => PageCompletionType::View->value,
+        'settings' => LessonPage::DEFAULT_SETTINGS,
+        'blocks' => [
+            authoringBlockPayload('quiz', [
+                'shuffle_questions' => false,
+                'questions' => [[
+                    'id' => $qId,
+                    'prompt' => 'Q?',
+                    'options' => [
+                        ['id' => $optB, 'text' => 'B'],
+                        ['id' => $optA, 'text' => 'A'],
                     ],
-                ], null, $cerId),
-            ], $pageId),
+                    'answer_id' => $optA,
+                    'feedback' => null,
+                    'source_ref' => null,
+                ]],
+            ], fullGradingShape(), $quizId),
+            authoringBlockPayload('cer', [
+                'scenario_html' => '<p>S</p>',
+                'fields' => [
+                    ['id' => $fieldEvidence, 'label' => 'Evidence', 'placeholder' => null, 'min_length' => null],
+                    ['id' => $fieldClaim, 'label' => 'Claim', 'placeholder' => null, 'min_length' => null],
+                ],
+            ], null, $cerId),
         ],
-    ]), $teacher);
+    ], $teacher);
 
     $quiz = $lesson->fresh()->pages->first()->blocks->firstWhere('block_id', $quizId);
     $cer = $lesson->fresh()->pages->first()->blocks->firstWhere('block_id', $cerId);
@@ -350,11 +366,9 @@ test('two blocks with identical content keep distinct ids on save', function () 
         ],
     ], $teacher);
 
-    $form = $service->toFormState($lesson->fresh());
-    $service->save($lesson->fresh(), array_merge($form, [
-        'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-        'pages' => $form['pages'],
-    ]), $teacher);
+    $page = LessonPage::query()->where('page_id', $pageId)->firstOrFail();
+    $state = $service->toPageFormState($page);
+    $service->savePage($page, $state, $teacher);
 
     $ids = $lesson->fresh()->pages->first()->blocks->pluck('block_id')->all();
     expect($ids)->toBe([$a, $b]);
@@ -401,19 +415,18 @@ test('incomplete draft saves but cannot publish; unsafe config is rejected', fun
             ->and(implode(' ', $e->errors))->toContain('quiz');
     }
 
-    expect(fn () => $service->save($lesson->fresh(), [
-        'code' => $lesson->code,
-        'title' => $lesson->title,
-        'settings' => $lesson->settings,
-        'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-        'pages' => [
-            authoringPagePayload('P', [
-                authoringBlockPayload('quiz', [
-                    'shuffle_questions' => false,
-                    'questions' => 'not-an-array',
-                    'unknown_key' => true,
-                ], null, $quizId),
-            ], $pageId),
+    $page = LessonPage::query()->where('page_id', $pageId)->firstOrFail();
+    expect(fn () => $service->savePage($page, [
+        'updated_at' => $page->fresh()->updated_at->toISOString(),
+        'title' => 'P',
+        'completion_type' => PageCompletionType::View->value,
+        'settings' => LessonPage::DEFAULT_SETTINGS,
+        'blocks' => [
+            authoringBlockPayload('quiz', [
+                'shuffle_questions' => false,
+                'questions' => 'not-an-array',
+                'unknown_key' => true,
+            ], null, $quizId),
         ],
     ], $teacher))->toThrow(AuthoringValidationException::class);
 });
@@ -508,21 +521,21 @@ test('failed nested save rolls back page and block order', function () {
 
     $beforePages = $lesson->fresh()->pages->pluck('page_id')->all();
     $beforeBlocks = $lesson->fresh()->pages->first()->blocks->pluck('block_id')->all();
+    $page = LessonPage::query()->where('page_id', $pageId)->firstOrFail();
+    $titleBefore = $page->title;
 
     try {
-        $service->save($lesson->fresh(), [
-            'code' => $lesson->code,
+        $service->savePage($page, [
+            'updated_at' => $page->fresh()->updated_at->toISOString(),
             'title' => 'Should rollback',
-            'settings' => $lesson->settings,
-            'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-            'pages' => [
-                authoringPagePayload('P', [
-                    richTextBlock($b),
-                    authoringBlockPayload('quiz', [
-                        'not_a_real_key' => true,
-                        'questions' => [],
-                    ], null, $a),
-                ], $pageId),
+            'completion_type' => PageCompletionType::View->value,
+            'settings' => LessonPage::DEFAULT_SETTINGS,
+            'blocks' => [
+                richTextBlock($b),
+                authoringBlockPayload('quiz', [
+                    'not_a_real_key' => true,
+                    'questions' => [],
+                ], null, $a),
             ],
         ], $teacher);
     } catch (AuthoringValidationException) {
@@ -532,6 +545,7 @@ test('failed nested save rolls back page and block order', function () {
     $fresh = $lesson->fresh();
     expect($fresh->title)->toBe('Rollback')
         ->and($fresh->pages->pluck('page_id')->all())->toBe($beforePages)
+        ->and($fresh->pages->first()->title)->toBe($titleBefore)
         ->and($fresh->pages->first()->blocks->pluck('block_id')->all())->toBe($beforeBlocks);
 });
 
@@ -632,29 +646,22 @@ test('default_allow_read_aloud seeds new pages only', function () {
     ])->save();
 
     $form = $service->toFormState($lesson->fresh());
-    $newPageId = (string) Str::ulid();
     $service->save($lesson->fresh(), array_merge($form, [
         'settings' => ['default_allow_read_aloud' => false],
         'updated_at' => $lesson->fresh()->updated_at->toISOString(),
-        'pages' => [
-            authoringPagePayload('Existing', [richTextBlock($existing->blocks->first()->block_id)], $pageId),
-            [
-                'page_id' => $newPageId,
-                'title' => 'Brand new',
-                'completion_type' => PageCompletionType::View->value,
-                'estimated_minutes' => null,
-                // Omit allow_read_aloud so LessonPage boot seeds from lesson default.
-                'settings' => [
-                    'minimum_score' => null,
-                    'require_all_blocks' => false,
-                    'allow_back_navigation' => true,
-                    'allow_skip' => false,
-                    'show_in_nav' => true,
-                ],
-                'blocks' => [richTextBlock()],
-            ],
-        ],
     ]), $teacher);
+
+    $service->createPage($lesson->fresh(), $teacher, $lesson->fresh()->updated_at->toISOString(), [
+        'title' => 'Brand new',
+        // Omit allow_read_aloud so createPage seeds from lesson default.
+        'settings' => [
+            'minimum_score' => null,
+            'require_all_blocks' => false,
+            'allow_back_navigation' => true,
+            'allow_skip' => false,
+            'show_in_nav' => true,
+        ],
+    ]);
 
     $fresh = $lesson->fresh()->pages()->orderBy('position')->get();
     expect($fresh[0]->settings['allow_read_aloud'])->toBeTrue()
