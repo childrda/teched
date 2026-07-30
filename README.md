@@ -131,6 +131,16 @@ response blocks, and the version-bound grading endpoint). Phase 2D adds
 local session authentication so those routes require a signed-in user.
 Google sign-in arrives in Phase 6 on the same `users` rows via `google_id`.
 
+## Staff authoring (Filament)
+
+Teachers and admins author lessons at `/admin` using
+[Filament](https://filamentphp.com) (Livewire). That stack is intentional for
+**staff authoring on a desk machine** — it is not a reversal of the Alpine/Vite
+student player, which stays free of Livewire because school wifi latency makes
+round-trips painful for interactions. Publishing still goes through
+`LessonPublisher` and writes immutable `lesson_versions`; the student player is
+unchanged.
+
 ## Local setup
 
 Requirements: PHP 8.2+, Composer, MySQL/MariaDB (developed against XAMPP

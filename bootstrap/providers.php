@@ -1,9 +1,7 @@
 <?php
 
-use App\Providers\AppServiceProvider;
-use App\Providers\BlockTypeServiceProvider;
-
 return [
-    AppServiceProvider::class,
-    BlockTypeServiceProvider::class,
+    App\Providers\AppServiceProvider::class,
+    App\Providers\BlockTypeServiceProvider::class,
+    App\Providers\Filament\AdminPanelProvider::class,
 ];

@@ -3,11 +3,13 @@
 namespace App\Providers;
 
 use App\Http\Controllers\Auth\SessionController;
+use App\Models\Lesson;
 use App\Models\LessonAssignment;
 use App\Models\LessonAttempt;
 use App\Models\SchoolClass;
 use App\Policies\LessonAssignmentPolicy;
 use App\Policies\LessonAttemptPolicy;
+use App\Policies\LessonPolicy;
 use App\Policies\SchoolClassPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -33,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(SchoolClass::class, SchoolClassPolicy::class);
         Gate::policy(LessonAssignment::class, LessonAssignmentPolicy::class);
         Gate::policy(LessonAttempt::class, LessonAttemptPolicy::class);
+        Gate::policy(Lesson::class, LessonPolicy::class);
 
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by(SessionController::throttleKey($request));

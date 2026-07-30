@@ -78,7 +78,7 @@ class WeldingLessonSeeder extends Seeder
             'settings' => [
                 'default_allow_read_aloud' => true,
             ],
-            'created_by' => $author->id,
+            'created_by_user_id' => $author->id,
             'updated_by' => $author->id,
         ]);
 
