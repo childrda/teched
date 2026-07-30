@@ -103,3 +103,40 @@ test('the player and manifest API stay on the pinned version after a republish',
     expect($v1Token)->not->toBe($v2Token)
         ->and($v1Id)->not->toBe($v2->id);
 });
+
+test('the manifest API returns a completed attempt pinned and read-only after a republish', function () {
+    $user = asStudent();
+    $lesson = createLessonWithAllBlockTypes();
+    $publisher = app(LessonPublisher::class);
+    $publisher->publish($lesson, User::factory()->create());
+
+    $attempt = app(AttemptService::class)->resolveForPlayer($user, $lesson->fresh())['attempt'];
+    $attempt->forceFill([
+        'status' => AttemptStatus::Completed,
+        'completed_at' => now(),
+    ])->save();
+
+    $block = LessonBlock::query()->whereHas('page', fn ($q) => $q->where('lesson_id', $lesson->id))->first();
+    $block->update(['config' => array_merge($block->config, ['html' => '<p>Version two</p>'])]);
+    $publisher->publish($lesson->fresh(), User::factory()->create());
+
+    $api = $this->getJson("/api/lessons/{$lesson->code}")->assertOk()->json();
+
+    expect($api['version'])->toBe(1)
+        ->and($api['attempt']['id'])->toBe($attempt->id)
+        ->and($api['attempt']['read_only'])->toBeTrue()
+        ->and($lesson->fresh()->current_version)->toBe(2);
+});
+
+test('a GET to the manifest API creates no attempt when the student has none', function () {
+    $user = asStudent();
+    $lesson = createLessonWithAllBlockTypes();
+    app(LessonPublisher::class)->publish($lesson, User::factory()->create());
+
+    expect(LessonAttempt::query()->where('user_id', $user->id)->count())->toBe(0);
+
+    $api = $this->getJson("/api/lessons/{$lesson->code}")->assertOk()->json();
+
+    expect($api)->not->toHaveKey('attempt')
+        ->and(LessonAttempt::query()->where('user_id', $user->id)->count())->toBe(0);
+});

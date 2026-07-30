@@ -6,8 +6,11 @@ use App\Blocks\BlockTypeRegistry;
 use App\Enums\AttemptStatus;
 use App\Http\Controllers\Controller;
 use App\Models\BlockState;
+use App\Models\LessonAttempt;
 use App\Services\AttemptService;
+use App\Support\DatabaseErrors;
 use App\Support\ManifestBlockLookup;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -70,17 +73,12 @@ class SaveBlockStateController extends Controller
                 return $this->conflict($existing);
             }
 
-            $row = BlockState::query()->create([
-                'lesson_attempt_id' => $owned->id,
-                'block_id' => $blockId,
-                'block_type' => $block['type'],
-                'state' => $normalized,
-                'revision' => 1,
-            ]);
-
-            $owned->forceFill(['last_activity_at' => now()])->save();
-
-            return response()->json(['revision' => $row->revision]);
+            return $this->createInitialState(
+                $owned,
+                $blockId,
+                (string) $block['type'],
+                $normalized
+            );
         }
 
         if ($existing === null) {
@@ -106,9 +104,52 @@ class SaveBlockStateController extends Controller
             return $this->conflict($existing->fresh());
         }
 
-        $owned->forceFill(['last_activity_at' => now()])->save();
+        $this->touchLastActivity($owned);
 
         return response()->json(['revision' => $clientRevision + 1]);
+    }
+
+    /**
+     * First save for a block (client revision 0, no row yet). On a unique
+     * violation from a concurrent first save, return the same 409 conflict
+     * body a stale revision produces — someone else got there first.
+     *
+     * @param  array<string, mixed>  $normalized
+     */
+    public function createInitialState(
+        LessonAttempt $attempt,
+        string $blockId,
+        string $blockType,
+        array $normalized,
+    ): JsonResponse {
+        try {
+            $row = BlockState::query()->create([
+                'lesson_attempt_id' => $attempt->id,
+                'block_id' => $blockId,
+                'block_type' => $blockType,
+                'state' => $normalized,
+                'revision' => 1,
+            ]);
+
+            $this->touchLastActivity($attempt);
+
+            return response()->json(['revision' => $row->revision]);
+        } catch (QueryException $e) {
+            if (! DatabaseErrors::isUniqueViolation($e)) {
+                throw $e;
+            }
+
+            $winner = BlockState::query()
+                ->where('lesson_attempt_id', $attempt->id)
+                ->where('block_id', $blockId)
+                ->first();
+
+            if ($winner === null) {
+                throw $e;
+            }
+
+            return $this->conflict($winner);
+        }
     }
 
     private function conflict(BlockState $row): JsonResponse
@@ -118,5 +159,23 @@ class SaveBlockStateController extends Controller
             'revision' => $row->revision,
             'state' => $row->state,
         ], 409);
+    }
+
+    /**
+     * Coarsen last_activity_at updates: the column answers "when was this
+     * student last doing something," which does not need second-level
+     * precision. Skipping writes already within 30s keeps the attempt row
+     * from becoming a hot write target under chatty autosave.
+     */
+    private function touchLastActivity(LessonAttempt $attempt): void
+    {
+        $last = $attempt->last_activity_at;
+
+        if ($last !== null && $last->gt(now()->subSeconds(30))) {
+            return;
+        }
+
+        $attempt->forceFill(['last_activity_at' => now()])->save();
+        $attempt->refresh();
     }
 }

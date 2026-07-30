@@ -11,8 +11,9 @@ use Illuminate\Support\Facades\Auth;
 
 /**
  * Serves the published, redacted manifest students consume. When the student
- * has an in_progress attempt, returns that attempt's pinned version plus
- * restore data — never a newly published version mid-attempt.
+ * has an existing attempt (in progress or completed), returns that attempt's
+ * pinned version plus restore data — never a newly published version for a
+ * student mid-run or reviewing a finished one. Never creates an attempt.
  */
 class LessonManifestController extends Controller
 {
@@ -30,12 +31,16 @@ class LessonManifestController extends Controller
             abort(404);
         }
 
-        $inProgress = $this->attempts->inProgressFor(Auth::user(), $lesson);
+        $resolved = $this->attempts->existingAttempt(Auth::user(), $lesson);
 
-        if ($inProgress !== null) {
-            $inProgress->loadMissing('lessonVersion');
-            $manifest = $this->studentManifest->forVersion($inProgress->lessonVersion);
-            $manifest['attempt'] = $this->attempts->restorePayload($inProgress, readOnly: false);
+        if ($resolved !== null) {
+            $attempt = $resolved['attempt'];
+            $attempt->loadMissing('lessonVersion');
+            $manifest = $this->studentManifest->forVersion($attempt->lessonVersion);
+            $manifest['attempt'] = $this->attempts->restorePayload(
+                $attempt,
+                $resolved['read_only']
+            );
 
             return response()->json($manifest);
         }

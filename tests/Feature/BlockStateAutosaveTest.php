@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AttemptStatus;
+use App\Http\Controllers\Player\SaveBlockStateController;
 use App\Models\BlockState;
 use App\Models\Lesson;
 use App\Models\LessonAttempt;
@@ -118,4 +119,38 @@ test('short response whitespace round-trips while satisfaction uses trimmed leng
     expect($stored['value'])->toBe("  \nkeep me  ")
         ->and($type->isStateSatisfied($stored, $block['config']))->toBeTrue()
         ->and($type->isStateSatisfied(['value' => '   '], $block['config']))->toBeFalse();
+});
+
+test('a concurrent first save returns 409 with the winner rather than throwing', function () {
+    // A true HTTP race cannot be reproduced in-process: both requests would
+    // share one PHP process and one transaction timeline. Calling the
+    // create-or-conflict method twice against the same unique key exercises
+    // the same recovery path the unique-index loser takes.
+    [, , $attempt] = openAttempt();
+    $blockId = blockOfType($attempt->lessonVersion->manifest['pages'], 'short_response')['block_id'];
+    $controller = app(SaveBlockStateController::class);
+
+    $first = $controller->createInitialState(
+        $attempt,
+        $blockId,
+        'short_response',
+        ['value' => 'winner']
+    );
+
+    expect($first->getStatusCode())->toBe(200)
+        ->and($first->getData(true))->toBe(['revision' => 1]);
+
+    $second = $controller->createInitialState(
+        $attempt,
+        $blockId,
+        'short_response',
+        ['value' => 'loser']
+    );
+
+    expect($second->getStatusCode())->toBe(409)
+        ->and($second->getData(true)['revision'])->toBe(1)
+        ->and($second->getData(true)['state'])->toBe(['value' => 'winner']);
+
+    expect(BlockState::query()->where('lesson_attempt_id', $attempt->id)->where('block_id', $blockId)->count())
+        ->toBe(1);
 });

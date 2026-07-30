@@ -6,6 +6,7 @@ use App\Enums\AttemptStatus;
 use App\Models\Lesson;
 use App\Models\LessonAttempt;
 use App\Models\User;
+use App\Support\DatabaseErrors;
 use App\Support\StudentGradingResult;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,41 @@ class AttemptService
     }
 
     /**
+     * The attempt that already applies for this user and lesson, with no
+     * creation side effect. In-progress wins; else the most recent completed
+     * (read-only); else null. Shared by the player and the manifest API so
+     * the two cannot disagree about which pin applies.
+     *
+     * @return array{attempt: LessonAttempt, read_only: bool}|null
+     */
+    public function existingAttempt(User $user, Lesson $lesson): ?array
+    {
+        $inProgress = LessonAttempt::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('status', AttemptStatus::InProgress)
+            ->first();
+
+        if ($inProgress !== null) {
+            return ['attempt' => $inProgress, 'read_only' => false];
+        }
+
+        $completed = LessonAttempt::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('status', AttemptStatus::Completed)
+            ->orderByDesc('completed_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($completed !== null) {
+            return ['attempt' => $completed, 'read_only' => true];
+        }
+
+        return null;
+    }
+
+    /**
      * @return array{attempt: LessonAttempt, read_only: bool}|null
      */
     public function resolveForPlayer(User $user, Lesson $lesson): ?array
@@ -35,27 +71,19 @@ class AttemptService
         }
 
         return DB::transaction(function () use ($user, $lesson) {
-            $inProgress = LessonAttempt::query()
+            // Lock any in-progress row so concurrent first visits serialize
+            // against the same attempt before falling through to create.
+            LessonAttempt::query()
                 ->where('user_id', $user->id)
                 ->where('lesson_id', $lesson->id)
                 ->where('status', AttemptStatus::InProgress)
                 ->lockForUpdate()
                 ->first();
 
-            if ($inProgress !== null) {
-                return ['attempt' => $inProgress, 'read_only' => false];
-            }
+            $existing = $this->existingAttempt($user, $lesson);
 
-            $completed = LessonAttempt::query()
-                ->where('user_id', $user->id)
-                ->where('lesson_id', $lesson->id)
-                ->where('status', AttemptStatus::Completed)
-                ->orderByDesc('completed_at')
-                ->orderByDesc('id')
-                ->first();
-
-            if ($completed !== null) {
-                return ['attempt' => $completed, 'read_only' => true];
+            if ($existing !== null) {
+                return $existing;
             }
 
             return ['attempt' => $this->createAttempt($user, $lesson), 'read_only' => false];
@@ -63,8 +91,7 @@ class AttemptService
     }
 
     /**
-     * In-progress attempt for API/grading, or null when none (API then falls
-     * back to the currently available version without restore data).
+     * In-progress attempt for grading, or null when none.
      */
     public function inProgressFor(User $user, Lesson $lesson): ?LessonAttempt
     {
@@ -168,7 +195,7 @@ class AttemptService
             // Two tabs raced the insert; the uniqueness mechanism (MySQL
             // generated column, or a future unique constraint) rejected the
             // loser. Re-query the winner — never surface the exception.
-            if (! $this->isUniqueViolation($e)) {
+            if (! DatabaseErrors::isUniqueViolation($e)) {
                 throw $e;
             }
 
@@ -184,13 +211,5 @@ class AttemptService
 
             return $winner;
         }
-    }
-
-    private function isUniqueViolation(QueryException $e): bool
-    {
-        $sqlState = $e->errorInfo[0] ?? null;
-
-        // 23000 = integrity constraint violation (MySQL/SQLite/Postgres).
-        return $sqlState === '23000' || $e->getCode() === '23000';
     }
 }

@@ -8,6 +8,7 @@ use App\Models\BlockSubmission;
 use App\Models\LessonAttempt;
 use App\Services\AttemptService;
 use App\Services\PageCompletionEvaluator;
+use App\Support\CanonicalJson;
 use App\Support\ManifestBlockLookup;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -168,18 +169,13 @@ class ContinuePageController extends Controller
                 ->orderByDesc('attempt_number')
                 ->first();
 
-            if ($latest !== null && $latest->response == $state) {
+            if ($latest !== null && CanonicalJson::equal($latest->response, $state)) {
                 continue;
             }
 
             $nextNumber = (int) $attempt->blockSubmissions()
                 ->where('block_id', $blockId)
                 ->max('attempt_number') + 1;
-
-            if ($attempt->lesson_version_id !== $attempt->lessonVersion->id) {
-                // Defensive: denormalized version must match the pin.
-                abort(500);
-            }
 
             BlockSubmission::query()->create([
                 'lesson_attempt_id' => $attempt->id,
