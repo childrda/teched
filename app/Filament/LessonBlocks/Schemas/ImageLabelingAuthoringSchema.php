@@ -9,6 +9,7 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\ViewField;
 use Filament\Forms\Get;
 use Illuminate\Support\Str;
 
@@ -24,7 +25,7 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
     public function filamentSchema(): array
     {
         return [
-            TextInput::make('image_url')->label('Image URL / path')->required(),
+            TextInput::make('image_url')->label('Image URL / path')->required()->live(),
             TextInput::make('image_alt')->label('Alt text')->required(),
             Textarea::make('long_description')->columnSpanFull(),
             Textarea::make('instructions')->columnSpanFull(),
@@ -37,18 +38,24 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
                 ->defaultItems(1)
                 ->live()
                 ->columnSpanFull(),
+            ViewField::make('hotspot_map')
+                ->label('Hotspot map')
+                ->view('filament.lesson-blocks.hotspot-map')
+                ->dehydrated(false)
+                ->columnSpanFull(),
             Repeater::make('hotspots')
                 ->schema([
                     Hidden::make('id')->default(fn () => (string) Str::ulid()),
                     TextInput::make('number')->numeric()->minValue(1)->required(),
                     TextInput::make('x_pct')
-                        ->label('X % (temporary — hotspot editor is 5B)')
+                        ->label('X %')
                         ->numeric()
                         ->minValue(0)
                         ->maxValue(100)
-                        ->required(),
+                        ->required()
+                        ->helperText('Precision path / fallback when the image cannot load.'),
                     TextInput::make('y_pct')
-                        ->label('Y % (temporary — hotspot editor is 5B)')
+                        ->label('Y %')
                         ->numeric()
                         ->minValue(0)
                         ->maxValue(100)
@@ -70,6 +77,7 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
                     Textarea::make('description'),
                 ])
                 ->defaultItems(1)
+                ->live()
                 ->columnSpanFull(),
             ...$this->gradingFields(includeReveal: true),
         ];

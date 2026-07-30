@@ -10,7 +10,7 @@ use Database\Seeders\WeldingLessonSeeder;
 beforeEach(fn () => asStudent());
 
 test('a lesson defaults to allowing read-aloud', function () {
-    $lesson = Lesson::query()->create(['code' => 'RA-0.0.1', 'title' => 'Defaults']);
+    $lesson = Lesson::factory()->create(['code' => 'RA-0.0.1', 'title' => 'Defaults']);
 
     expect($lesson->settings)->toHaveKey('default_allow_read_aloud')
         ->and($lesson->settings['default_allow_read_aloud'])->toBeTrue();

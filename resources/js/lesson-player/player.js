@@ -8,15 +8,26 @@ import { createSpeechController, RATE } from './speech';
  *
  * Navigation is a change of index rather than a request. Attempt restore,
  * autosave, and active-time tracking keep work durable across reloads.
+ *
+ * Controllers pass an explicit capabilities object. Modules branch on those
+ * flags only — never on preview mode, attempt presence, or grading_token.
  */
-export function lessonPlayer(manifest, attempt = null) {
+export function lessonPlayer(manifest, attempt = null, capabilities = null) {
   const restore = attempt && typeof attempt === 'object' ? attempt : null;
   const readOnly = restore?.read_only === true || restore?.status === 'completed';
+  const caps = {
+    canPersist: true,
+    canGrade: true,
+    canAdvancePersistently: true,
+    bypassCompletionGates: false,
+    ...(capabilities && typeof capabilities === 'object' ? capabilities : {}),
+  };
 
   return {
     manifest,
     attempt: restore,
     readOnly,
+    capabilities: caps,
     pages: Array.isArray(manifest?.pages) ? manifest.pages : [],
     currentIndex: 0,
     attemptRevision: restore?.revision ?? 0,
@@ -66,7 +77,9 @@ export function lessonPlayer(manifest, attempt = null) {
         }
       }
 
-      if (restore?.id && ! this.readOnly) {
+      // When canPersist is false (preview), never touch localStorage autosave
+      // keys and never start active-time timers — shared Chromebook carts.
+      if (this.capabilities.canPersist && restore?.id && ! this.readOnly) {
         const getCsrf = () =>
           document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 
@@ -206,17 +219,33 @@ export function lessonPlayer(manifest, attempt = null) {
     },
 
     get canContinue() {
-      if (this.readOnly) {
+      if (this.readOnly && ! this.capabilities.bypassCompletionGates) {
         return false;
+      }
+
+      if (this.capabilities.bypassCompletionGates) {
+        return ! this.isLastPage;
       }
 
       return this.completionState.satisfied && this.pageSynced && ! this.conflicted;
     },
 
+    get continueLabel() {
+      if (! this.capabilities.canAdvancePersistently) {
+        return 'Next page (preview)';
+      }
+
+      return this.isLastPage ? 'Finish' : 'Continue';
+    },
+
     /** Why Continue is unavailable, or '' when it is available. */
     get gateMessage() {
-      if (this.readOnly) {
+      if (this.readOnly && ! this.capabilities.bypassCompletionGates) {
         return 'This lesson is complete. Your answers are shown read-only.';
+      }
+
+      if (this.capabilities.bypassCompletionGates) {
+        return this.isLastPage ? 'End of preview.' : '';
       }
 
       if (this.conflicted) {
@@ -257,7 +286,7 @@ export function lessonPlayer(manifest, attempt = null) {
     },
 
     queueSave(blockId, state) {
-      if (this.readOnly || ! this.autosave) {
+      if (! this.capabilities.canPersist || this.readOnly || ! this.autosave) {
         return;
       }
 
@@ -296,12 +325,24 @@ export function lessonPlayer(manifest, attempt = null) {
     },
 
     async goForward() {
-      if (this.isLastPage || this.readOnly) {
+      if (this.isLastPage) {
+        return;
+      }
+
+      if (this.readOnly && ! this.capabilities.bypassCompletionGates) {
         return;
       }
 
       if (! this.canContinue) {
         this.announce(this.gateMessage);
+
+        return;
+      }
+
+      // Preview / non-persistent advance: local index only — never the
+      // persisted current_page_id Continue endpoint.
+      if (! this.capabilities.canAdvancePersistently) {
+        this.goTo(this.currentIndex + 1);
 
         return;
       }

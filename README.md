@@ -165,10 +165,11 @@ php artisan db:seed        # users + WEL-6.1.1 "What Is Welding?"
 npm run build              # or: npm run dev
 ```
 
-Seeded development accounts (password for all three: `password`):
+Seeded development accounts (password for all: `password`):
 
 | Email | Role |
 | --- | --- |
+| `admin@teched.test` | admin |
 | `teacher@teched.test` | teacher (publishes WEL-6.1.1) |
 | `student1@teched.test` | student |
 | `student2@teched.test` | student |

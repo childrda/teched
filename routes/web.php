@@ -35,6 +35,9 @@ Route::post('/logout', [SessionController::class, 'destroy'])
 Route::middleware('auth')->group(function () {
     Route::get('/lessons/{code}', LessonPlayerController::class)->name('lessons.play');
 
+    Route::get('/authoring/lessons/{lesson}/preview', \App\Http\Controllers\Authoring\LessonPreviewController::class)
+        ->name('authoring.lessons.preview');
+
     Route::get('/player/assignments/{assignment}', AssignmentPlayerController::class)
         ->name('player.assignments.show');
 

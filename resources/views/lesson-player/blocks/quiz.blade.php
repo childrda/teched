@@ -104,10 +104,21 @@
     <div class="flex flex-wrap items-center gap-3">
         <button type="button"
                 class="player-btn player-btn-primary"
-                x-show="! readOnly && ! isBlocked"
+                x-show="! readOnly && ! isBlocked && canGrade"
                 :aria-disabled="submitting ? 'true' : 'false'"
                 @click="submit()"
                 x-text="submitting ? strings.submitting : (latestResult ? strings.retry : strings.submit)"></button>
+
+        {{-- Present but disabled in preview: grading genuinely cannot run. --}}
+        <template x-if="! canGrade && ! readOnly">
+            <div class="space-y-1">
+                <button type="button"
+                        class="player-btn player-btn-primary opacity-60"
+                        disabled
+                        aria-disabled="true">{{ __('quiz.submit') }}</button>
+                <p class="text-sm text-slate-700">Grading is unavailable in preview. Publish the lesson to test Submit.</p>
+            </div>
+        </template>
     </div>
 
     <template x-if="isBlocked">

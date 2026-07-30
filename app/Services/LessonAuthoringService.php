@@ -9,6 +9,7 @@ use App\Exceptions\AuthoringValidationException;
 use App\Exceptions\StaleLessonEditException;
 use App\Models\Lesson;
 use App\Models\LessonBlock;
+use App\Models\LessonOwnerChange;
 use App\Models\LessonPage;
 use App\Models\User;
 use App\Services\Authoring\AuthoringErrorFormatter;
@@ -28,6 +29,7 @@ class LessonAuthoringService
         private readonly NestedIdReconciler $idReconciler,
         private readonly AuthoringErrorFormatter $errorFormatter,
         private readonly LessonPublisher $publisher,
+        private readonly LessonCompiler $compiler,
     ) {
     }
 
@@ -156,6 +158,38 @@ class LessonAuthoringService
     }
 
     /**
+     * Admin-only ownership transfer with an immutable audit row.
+     */
+    public function reassignOwner(Lesson $lesson, User $newOwner, User $actor): Lesson
+    {
+        return DB::transaction(function () use ($lesson, $newOwner, $actor) {
+            /** @var Lesson $locked */
+            $locked = Lesson::query()->lockForUpdate()->findOrFail($lesson->getKey());
+            $previous = $locked->created_by_user_id;
+
+            if ((int) $previous === (int) $newOwner->getKey()) {
+                return $locked;
+            }
+
+            LessonOwnerChange::query()->create([
+                'lesson_id' => $locked->getKey(),
+                'previous_owner_user_id' => $previous,
+                'new_owner_user_id' => $newOwner->getKey(),
+                'changed_by_user_id' => $actor->getKey(),
+                'source' => 'manual',
+                'created_at' => now(),
+            ]);
+
+            $locked->forceFill([
+                'created_by_user_id' => $newOwner->getKey(),
+                'updated_by' => $actor->getKey(),
+            ])->save();
+
+            return $locked->fresh();
+        });
+    }
+
+    /**
      * @throws AuthoringValidationException
      */
     public function assertPublishReady(Lesson $lesson): void
@@ -205,8 +239,11 @@ class LessonAuthoringService
             throw AuthoringValidationException::with($errors);
         }
 
-        // Compile a dry-run manifest for schema validation without writing a version.
-        $manifest = $this->dryCompileManifest($lesson);
+        // Compile in memory for schema validation — never creates a version.
+        $manifest = $this->compiler->compileManifest(
+            $lesson,
+            max(1, (int) $lesson->current_version + 1),
+        );
 
         [$valid, $schemaErrors] = $this->validateManifestSchema($manifest);
         if (! $valid) {
@@ -270,12 +307,21 @@ class LessonAuthoringService
     }
 
     /**
+     * Normalize and draft-validate the entire graph in memory first. If any
+     * block fails, write nothing and return every addressed error together.
+     *
      * @param  list<array<string, mixed>>  $pagesData
      * @return list<string> warnings
      */
     private function syncGraph(Lesson $lesson, array $pagesData, User $user, ?string $expectedUpdatedAt): array
     {
-        $warnings = [];
+        $normalized = $this->normalizeIncomingGraph($pagesData);
+
+        if ($normalized['errors'] !== []) {
+            throw AuthoringValidationException::with($normalized['errors'], $normalized['warnings']);
+        }
+
+        $warnings = $normalized['warnings'];
         $existingPages = LessonPage::query()
             ->where('lesson_id', $lesson->getKey())
             ->with('blocks')
@@ -285,56 +331,36 @@ class LessonAuthoringService
 
         $orderedPageIds = [];
 
-        foreach (array_values($pagesData) as $pageIndex => $pageData) {
-            if (! is_array($pageData)) {
-                continue;
-            }
-
-            $pageId = is_string($pageData['page_id'] ?? null) && $pageData['page_id'] !== ''
-                ? $pageData['page_id']
-                : (string) Str::ulid();
+        foreach ($normalized['pages'] as $pageIndex => $pageData) {
+            $pageId = $pageData['page_id'];
 
             /** @var LessonPage|null $page */
             $page = $existingPages->get($pageId);
-
             $isNewPage = $page === null;
 
             if ($isNewPage) {
                 $page = new LessonPage;
                 $page->lesson_id = $lesson->getKey();
                 $page->page_id = $pageId;
-                // Temporary position; reorderWithin sets the final sequence.
                 $page->position = 10_000 + $pageIndex;
-                // So creating() can read settings.default_allow_read_aloud.
                 $page->setRelation('lesson', $lesson);
             }
 
-            $completion = $pageData['completion_type'] ?? PageCompletionType::View->value;
-            $providedSettings = is_array($pageData['settings'] ?? null) ? $pageData['settings'] : [];
-
-            // New pages: pass author settings through so LessonPage::creating can
-            // seed allow_read_aloud from the lesson default when omitted.
-            // Existing pages: merge full defaults; never retroactively rewrite
-            // from lessons.settings.default_allow_read_aloud.
             $page->forceFill([
-                'title' => $pageData['title'] ?? 'Untitled page',
-                'completion_type' => PageCompletionType::tryFrom((string) $completion) ?? PageCompletionType::View,
-                'estimated_minutes' => $pageData['estimated_minutes'] ?? null,
+                'title' => $pageData['title'],
+                'completion_type' => $pageData['completion_type'],
+                'estimated_minutes' => $pageData['estimated_minutes'],
                 'settings' => $isNewPage
-                    ? $providedSettings
-                    : array_merge(LessonPage::DEFAULT_SETTINGS, $providedSettings),
+                    ? $pageData['settings']
+                    : array_merge(LessonPage::DEFAULT_SETTINGS, $pageData['settings']),
             ])->save();
 
-            $pageWarnings = $this->syncBlocks($page, $pageData['blocks'] ?? []);
-            foreach ($pageWarnings as $warning) {
-                $warnings[] = "{$page->title} / {$warning}";
-            }
+            $this->persistBlocks($page, $pageData['blocks']);
 
             $orderedPageIds[] = $pageId;
             $existingPages->forget($pageId);
         }
 
-        // Remove pages the author deleted — authoring rows only.
         foreach ($existingPages as $removed) {
             $removed->blocks()->delete();
             $removed->delete();
@@ -348,12 +374,83 @@ class LessonAuthoringService
     }
 
     /**
-     * @param  list<array<string, mixed>>  $blocksData
-     * @return list<string>
+     * @param  list<array<string, mixed>>  $pagesData
+     * @return array{pages: list<array<string, mixed>>, errors: list<string>, warnings: list<string>}
      */
-    private function syncBlocks(LessonPage $page, array $blocksData): array
+    private function normalizeIncomingGraph(array $pagesData): array
     {
+        $errors = [];
         $warnings = [];
+        $pages = [];
+
+        foreach (array_values($pagesData) as $pageIndex => $pageData) {
+            if (! is_array($pageData)) {
+                $errors[] = 'Page #'.($pageIndex + 1).': must be an object.';
+
+                continue;
+            }
+
+            $pageId = is_string($pageData['page_id'] ?? null) && $pageData['page_id'] !== ''
+                ? $pageData['page_id']
+                : (string) Str::ulid();
+
+            $title = (string) ($pageData['title'] ?? 'Untitled page');
+            $completion = PageCompletionType::tryFrom((string) ($pageData['completion_type'] ?? ''))
+                ?? PageCompletionType::View;
+            $providedSettings = is_array($pageData['settings'] ?? null) ? $pageData['settings'] : [];
+            $blocks = [];
+
+            foreach (array_values($pageData['blocks'] ?? []) as $blockIndex => $item) {
+                if (! is_array($item)) {
+                    $errors[] = "{$title} / block #".($blockIndex + 1).': must be an object.';
+
+                    continue;
+                }
+
+                $typeKey = (string) ($item['type'] ?? '');
+                $data = is_array($item['data'] ?? null) ? $item['data'] : [];
+                $blockId = is_string($data['block_id'] ?? null) && $data['block_id'] !== ''
+                    ? $data['block_id']
+                    : (string) Str::ulid();
+                $grading = is_array($data['grading'] ?? null) ? $data['grading'] : null;
+                unset($data['block_id'], $data['grading']);
+
+                $draft = $this->draftValidator->validate($typeKey, $data, $grading);
+                foreach ($draft['errors'] as $error) {
+                    $errors[] = "{$title} / {$typeKey} #".($blockIndex + 1)." / {$error}";
+                }
+                foreach ($draft['warnings'] as $warning) {
+                    $warnings[] = "{$title} / {$typeKey} #".($blockIndex + 1)." / {$warning}";
+                }
+
+                $blocks[] = [
+                    'block_id' => $blockId,
+                    'type' => $typeKey,
+                    'config' => $draft['errors'] === []
+                        ? $this->idReconciler->reconcile($typeKey, $data)
+                        : $data,
+                    'grading' => $grading,
+                ];
+            }
+
+            $pages[] = [
+                'page_id' => $pageId,
+                'title' => $title,
+                'completion_type' => $completion,
+                'estimated_minutes' => $pageData['estimated_minutes'] ?? null,
+                'settings' => $providedSettings,
+                'blocks' => $blocks,
+            ];
+        }
+
+        return compact('pages', 'errors', 'warnings');
+    }
+
+    /**
+     * @param  list<array{block_id: string, type: string, config: array, grading: ?array}>  $blocksData
+     */
+    private function persistBlocks(LessonPage $page, array $blocksData): void
+    {
         $existing = LessonBlock::query()
             ->where('lesson_page_id', $page->getKey())
             ->lockForUpdate()
@@ -363,33 +460,7 @@ class LessonAuthoringService
         $orderedBlockIds = [];
 
         foreach (array_values($blocksData) as $blockIndex => $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
-            $typeKey = (string) ($item['type'] ?? '');
-            $data = is_array($item['data'] ?? null) ? $item['data'] : [];
-
-            $blockId = is_string($data['block_id'] ?? null) && $data['block_id'] !== ''
-                ? $data['block_id']
-                : (string) Str::ulid();
-
-            $grading = is_array($data['grading'] ?? null) ? $data['grading'] : null;
-            unset($data['block_id'], $data['grading']);
-
-            // Draft-validate before reconciling so structurally unsafe payloads
-            // never enter nested-id walks (e.g. questions as a string).
-            $draft = $this->draftValidator->validate($typeKey, $data, $grading);
-            foreach ($draft['errors'] as $error) {
-                throw AuthoringValidationException::with([
-                    "{$page->title} / {$typeKey} #".($blockIndex + 1)." / {$error}",
-                ], $draft['warnings']);
-            }
-            foreach ($draft['warnings'] as $warning) {
-                $warnings[] = "{$typeKey} #".($blockIndex + 1)." / {$warning}";
-            }
-
-            $config = $this->idReconciler->reconcile($typeKey, $data);
+            $blockId = $item['block_id'];
 
             /** @var LessonBlock|null $block */
             $block = $existing->get($blockId);
@@ -402,9 +473,9 @@ class LessonAuthoringService
             }
 
             $block->forceFill([
-                'type' => $typeKey,
-                'config' => $config,
-                'grading' => $grading,
+                'type' => $item['type'],
+                'config' => $item['config'],
+                'grading' => $item['grading'],
             ])->save();
 
             $orderedBlockIds[] = $blockId;
@@ -412,59 +483,12 @@ class LessonAuthoringService
         }
 
         foreach ($existing as $removed) {
-            // Authoring row only — never touch block_states / block_submissions.
             $removed->delete();
         }
 
         if ($orderedBlockIds !== []) {
             LessonBlock::reorderWithin($page->fresh(), $orderedBlockIds);
         }
-
-        return $warnings;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function dryCompileManifest(Lesson $lesson): array
-    {
-        $pages = $lesson->pages()->with('blocks')->get();
-
-        return [
-            'schema_version' => LessonPublisher::SCHEMA_VERSION,
-            'code' => $lesson->code,
-            'title' => $lesson->title,
-            'version' => max(1, (int) $lesson->current_version + 1),
-            'estimated_minutes' => $lesson->estimated_minutes,
-            'learning_target' => $lesson->learning_target,
-            'success_criteria' => $lesson->success_criteria,
-            'pages' => $pages->map(function (LessonPage $page) {
-                return [
-                    'page_id' => $page->page_id,
-                    'title' => $page->title,
-                    'position' => $page->position,
-                    'completion_type' => $page->completion_type->value,
-                    'estimated_minutes' => $page->estimated_minutes,
-                    'settings' => array_merge(LessonPage::DEFAULT_SETTINGS, $page->settings ?? []),
-                    'blocks' => $page->blocks->map(function (LessonBlock $block) {
-                        $typeKey = (string) $block->getRawOriginal('type');
-                        $type = $this->registry->get($typeKey);
-                        $validated = $type->validateConfig($block->config ?? []);
-                        $compiled = $type->compileConfig($validated);
-                        $grading = $type->validateGrading(
-                            is_array($block->grading) ? $block->grading : null
-                        );
-
-                        return [
-                            'block_id' => $block->block_id,
-                            'type' => $typeKey,
-                            'config' => $compiled,
-                            'grading' => $grading,
-                        ];
-                    })->values()->all(),
-                ];
-            })->values()->all(),
-        ];
     }
 
     /**

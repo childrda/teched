@@ -61,6 +61,22 @@ class LessonPolicy
         return $lesson->status === LessonStatus::Archived;
     }
 
+    public function preview(User $user, Lesson $lesson): bool
+    {
+        return $this->update($user, $lesson);
+    }
+
+    public function duplicate(User $user, Lesson $lesson): bool
+    {
+        return $this->view($user, $lesson) && $this->create($user);
+    }
+
+    /** Admins only — never the current owner acting alone. */
+    public function reassignOwner(User $user, Lesson $lesson): bool
+    {
+        return $user->isAdmin();
+    }
+
     private function ownsOrAdmin(User $user, Lesson $lesson): bool
     {
         if ($user->isAdmin()) {

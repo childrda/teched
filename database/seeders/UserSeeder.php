@@ -19,6 +19,8 @@ class UserSeeder extends Seeder
 
     public const TEACHER_EMAIL = 'teacher@teched.test';
 
+    public const ADMIN_EMAIL = 'admin@teched.test';
+
     public function run(): void
     {
         if (app()->environment('production')) {
@@ -27,6 +29,7 @@ class UserSeeder extends Seeder
             );
         }
 
+        $this->seedUser('Seed Admin', self::ADMIN_EMAIL, UserRole::Admin);
         $this->seedUser('Seed Teacher', self::TEACHER_EMAIL, UserRole::Teacher);
         $this->seedUser('Seed Student One', 'student1@teched.test', UserRole::Student);
         $this->seedUser('Seed Student Two', 'student2@teched.test', UserRole::Student);

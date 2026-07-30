@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LessonAssignment;
 use App\Services\AttemptService;
 use App\Services\StudentManifest;
+use App\Support\PlayerCapabilities;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -57,7 +58,7 @@ class AssignmentPlayerController extends Controller
             $preview = [
                 'id' => null,
                 'status' => AttemptStatus::InProgress->value,
-                'read_only' => true,
+                'read_only' => false,
                 'current_page_id' => $manifest['pages'][0]['page_id'] ?? null,
                 'active_seconds' => 0,
                 'revision' => 0,
@@ -65,11 +66,16 @@ class AssignmentPlayerController extends Controller
                 'block_states' => [],
                 'submissions' => [],
             ];
+            $capabilities = PlayerCapabilities::forPreview();
             view()->share('playerAttempt', $preview);
+            view()->share('playerCapabilities', $capabilities);
 
             return view('lesson-player.show', [
                 'manifest' => $manifest,
                 'attempt' => $preview,
+                'capabilities' => $capabilities,
+                'preview' => true,
+                'previewBanner' => 'Staff preview of the assignment pin. Grading, persistence, and completion-gate enforcement are not being tested.',
             ]);
         }
 
@@ -83,12 +89,18 @@ class AssignmentPlayerController extends Controller
         $attempt->loadMissing('lessonVersion');
         $manifest = $this->studentManifest->forVersion($attempt->lessonVersion);
         $restore = $this->attempts->restorePayload($attempt, $readOnly);
+        $capabilities = $readOnly
+            ? PlayerCapabilities::forReadOnly()
+            : PlayerCapabilities::forPlay();
 
         view()->share('playerAttempt', $restore);
+        view()->share('playerCapabilities', $capabilities);
 
         return view('lesson-player.show', [
             'manifest' => $manifest,
             'attempt' => $restore,
+            'capabilities' => $capabilities,
+            'preview' => false,
         ]);
     }
 }

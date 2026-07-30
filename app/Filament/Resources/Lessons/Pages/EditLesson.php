@@ -6,9 +6,14 @@ use App\Exceptions\AuthoringValidationException;
 use App\Exceptions\StaleLessonEditException;
 use App\Filament\Resources\Lessons\LessonResource;
 use App\Models\Lesson;
+use App\Models\LessonBlock;
+use App\Models\LessonPage;
+use App\Models\User;
 use App\Services\LessonAuthoringService;
+use App\Services\LessonContentDuplicator;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
@@ -66,6 +71,11 @@ class EditLesson extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('preview')
+                ->label('Preview as Student')
+                ->url(fn (): string => route('authoring.lessons.preview', $this->getRecord()))
+                ->openUrlInNewTab()
+                ->visible(fn (): bool => Gate::allows('preview', $this->getRecord())),
             Action::make('publish')
                 ->label('Publish')
                 ->color('success')
@@ -105,6 +115,127 @@ class EditLesson extends EditRecord
                             ->persistent()
                             ->send();
                     }
+                }),
+            Action::make('duplicate')
+                ->label('Duplicate lesson')
+                ->requiresConfirmation()
+                ->visible(fn (): bool => Gate::allows('duplicate', $this->getRecord()))
+                ->action(function (): void {
+                    try {
+                        $copy = app(LessonContentDuplicator::class)
+                            ->duplicateLesson($this->getRecord(), Auth::user());
+                        Notification::make()
+                            ->title('Lesson duplicated')
+                            ->body("Draft {$copy->code} created.")
+                            ->success()
+                            ->send();
+                        $this->redirect(LessonResource::getUrl('edit', ['record' => $copy]));
+                    } catch (AuthoringValidationException $e) {
+                        Notification::make()
+                            ->title('Duplicate failed')
+                            ->body(implode("\n", $e->errors))
+                            ->danger()
+                            ->send();
+                    }
+                }),
+            Action::make('duplicatePage')
+                ->label('Duplicate page')
+                ->visible(fn (): bool => Gate::allows('update', $this->getRecord()))
+                ->form([
+                    Select::make('page_id')
+                        ->label('Page to duplicate')
+                        ->options(fn () => $this->getRecord()->pages()->pluck('title', 'page_id'))
+                        ->required(),
+                ])
+                ->action(function (array $data): void {
+                    $page = LessonPage::query()
+                        ->where('lesson_id', $this->getRecord()->getKey())
+                        ->where('page_id', $data['page_id'])
+                        ->firstOrFail();
+                    app(LessonContentDuplicator::class)->duplicatePageWithin($this->getRecord(), $page);
+                    Notification::make()->title('Page duplicated')->success()->send();
+                    $this->fillForm();
+                }),
+            Action::make('duplicateBlock')
+                ->label('Duplicate block')
+                ->visible(fn (): bool => Gate::allows('update', $this->getRecord()))
+                ->form([
+                    Select::make('block_id')
+                        ->label('Block to duplicate')
+                        ->options(function () {
+                            return $this->getRecord()->pages()->with('blocks')->get()
+                                ->flatMap(fn (LessonPage $page) => $page->blocks->mapWithKeys(
+                                    fn (LessonBlock $block) => [
+                                        $block->block_id => $page->title.' / '.$block->type->value,
+                                    ]
+                                ))
+                                ->all();
+                        })
+                        ->required(),
+                ])
+                ->action(function (array $data): void {
+                    $block = LessonBlock::query()
+                        ->where('block_id', $data['block_id'])
+                        ->whereHas('page', fn ($q) => $q->where('lesson_id', $this->getRecord()->getKey()))
+                        ->firstOrFail();
+                    app(LessonContentDuplicator::class)->duplicateBlockWithin($block->page, $block);
+                    Notification::make()->title('Block duplicated')->success()->send();
+                    $this->fillForm();
+                }),
+            Action::make('copyPageInto')
+                ->label('Copy page into this lesson')
+                ->visible(fn (): bool => Gate::allows('update', $this->getRecord()))
+                ->form([
+                    Select::make('source_page_id')
+                        ->label('Source page (any lesson you can view)')
+                        ->options(function () {
+                            $user = Auth::user();
+                            $query = LessonPage::query()->with('lesson')->orderBy('title');
+                            if (! $user->isAdmin()) {
+                                $query->whereHas('lesson', fn ($q) => $q->where('created_by_user_id', $user->id));
+                            }
+
+                            return $query->get()->mapWithKeys(
+                                fn (LessonPage $page) => [
+                                    $page->id => ($page->lesson?->code ?? '?').' — '.$page->title,
+                                ]
+                            )->all();
+                        })
+                        ->required()
+                        ->searchable(),
+                ])
+                ->action(function (array $data): void {
+                    $source = LessonPage::query()->with('lesson')->findOrFail($data['source_page_id']);
+                    Gate::authorize('view', $source->lesson);
+                    Gate::authorize('update', $this->getRecord());
+                    app(LessonContentDuplicator::class)->copyPageInto($source, $this->getRecord());
+                    Notification::make()->title('Page copied into lesson')->success()->send();
+                    $this->fillForm();
+                }),
+            Action::make('reassignOwner')
+                ->label('Reassign owner')
+                ->visible(fn (): bool => Gate::allows('reassignOwner', $this->getRecord()))
+                ->form([
+                    Select::make('new_owner_user_id')
+                        ->label('New owner')
+                        ->options(
+                            User::query()
+                                ->whereIn('role', ['teacher', 'admin'])
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                        )
+                        ->required()
+                        ->searchable(),
+                ])
+                ->action(function (array $data): void {
+                    $newOwner = User::query()->findOrFail($data['new_owner_user_id']);
+                    app(LessonAuthoringService::class)->reassignOwner(
+                        $this->getRecord(),
+                        $newOwner,
+                        Auth::user(),
+                    );
+                    Notification::make()->title('Owner reassigned')->success()->send();
+                    $this->refreshFormData(['updated_at']);
                 }),
             Action::make('archive')
                 ->label('Archive')

@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\LessonStatus;
 use App\Models\Lesson;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -29,6 +30,9 @@ class LessonFactory extends Factory
             'status' => LessonStatus::Draft,
             'current_version' => 0,
             'has_unpublished_changes' => false,
+            // Non-nullable owner (Phase 5B). Prefer an existing staff user so
+            // tests that create many lessons do not require an admin seed.
+            'created_by_user_id' => User::factory(),
         ];
     }
 

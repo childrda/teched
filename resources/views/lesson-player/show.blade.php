@@ -4,10 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $manifest['title'] }}</title>
+    <title>{{ $manifest['title'] }}{{ ! empty($preview) ? ' (Preview)' : '' }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="h-full bg-slate-100 font-sans text-slate-900">
+
+@php
+    $capabilities = $capabilities ?? \App\Support\PlayerCapabilities::forPlay();
+    $preview = $preview ?? false;
+@endphp
 
 <noscript>
     <p class="m-4 rounded-md border-2 border-amber-700 bg-amber-50 p-4 font-semibold">
@@ -15,10 +20,17 @@
     </p>
 </noscript>
 
+@if ($preview)
+    <div class="border-b-2 border-amber-800 bg-amber-100 px-4 py-3 text-sm font-semibold text-amber-950" role="status">
+        {{ $previewBanner ?? 'Previewing your last saved draft. Grading, persistence, and completion-gate enforcement are not being tested.' }}
+    </div>
+@endif
+
 {{-- The whole manifest is embedded once, escaped by @js. The player never fetches.
      data-lesson-code lets nested block components build the grading URL
-     without changing the Block view component. --}}
-<div x-data="lessonPlayer(@js($manifest), @js($attempt))"
+     without changing the Block view component. Capabilities are the only
+     branch for persist/grade/nav — never preview mode or token presence. --}}
+<div x-data="lessonPlayer(@js($manifest), @js($attempt), @js($capabilities))"
      data-lesson-code="{{ $manifest['code'] }}"
      x-cloak
      class="flex min-h-full flex-col">
@@ -166,7 +178,8 @@
                             class="player-btn player-btn-primary"
                             :aria-disabled="canContinue ? 'false' : 'true'"
                             aria-describedby="continue-hint"
-                            @click="goForward()">Continue</button>
+                            @click="goForward()"
+                            x-text="continueLabel">Continue</button>
                 </template>
 
                 <template x-if="isLastPage">

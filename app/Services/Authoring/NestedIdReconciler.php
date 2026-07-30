@@ -8,6 +8,11 @@ use Illuminate\Support\Str;
  * Ensures nested config identifiers from the form are preserved on save.
  * New items without an id receive a ULID; existing ids are never reminted
  * based on content similarity.
+ *
+ * Duplication is the inverse: LessonContentDuplicator regenerates every
+ * authoring id and rewrites answer_id / bank associations through a map.
+ * Do not "fix" this reconciler to remint on copy, and do not teach the
+ * duplicator to preserve ids the way this class does on edit.
  */
 class NestedIdReconciler
 {

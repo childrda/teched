@@ -57,7 +57,6 @@ class LessonForm
                 Section::make('Pages')
                     ->schema([
                         Repeater::make('pages')
-                            ->orderColumn(null)
                             ->reorderable()
                             ->collapsible()
                             ->itemLabel(fn (array $state): ?string => $state['title'] ?? 'Page')

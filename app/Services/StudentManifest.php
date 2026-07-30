@@ -8,18 +8,14 @@ use App\Models\Lesson;
 use App\Models\LessonVersion;
 
 /**
- * Builds the single payload every student-facing surface consumes: the
- * published manifest with each block config passed through its type's
+ * Builds the single payload every student-facing surface consumes: a
+ * compiled manifest with each block config passed through its type's
  * redactConfig() and each block given a read-aloud "speech" list.
  *
- * Both the JSON API and the web player call this, so the two can never
- * drift in what they redact or what they let a student hear.
+ * Redaction accepts a compiled array so Preview as Student can share this
+ * path without constructing a temporary LessonVersion.
  *
- * Speech is registry-driven: the per-type wording lives in each block
- * type's speakableText(), never here, in a controller, or in a template.
- *
- * grading_token binds the player to this version for the grading endpoint
- * without exposing the version's database id.
+ * grading_token is issued only for published versions — never for preview.
  */
 class StudentManifest
 {
@@ -69,14 +65,28 @@ class StudentManifest
     {
         // The array cast returns a fresh decoded copy, so redaction below
         // never mutates the stored manifest or the model's attribute.
-        $manifest = $version->manifest;
+        $manifest = $this->redactCompiledManifest($version->manifest);
+        $manifest['grading_token'] = $this->gradingToken->issue($version);
+
+        return $manifest;
+    }
+
+    /**
+     * Redact and annotate a compiled manifest array. Does not issue a
+     * grading_token — callers that serve published play attach one via
+     * forVersion(); preview must never invent one.
+     *
+     * @param  array<string, mixed>  $compiled
+     * @return array<string, mixed>
+     */
+    public function redactCompiledManifest(array $compiled): array
+    {
+        $manifest = $compiled;
 
         $manifest['pages'] = array_map(
             fn (array $page) => $this->preparePage($page),
             $manifest['pages'] ?? []
         );
-
-        $manifest['grading_token'] = $this->gradingToken->issue($version);
 
         return $manifest;
     }

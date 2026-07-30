@@ -42,6 +42,10 @@ export function quizActivity(config = {}) {
     readOnly: false,
     disposeContributor: null,
 
+    get canGrade() {
+      return this.player()?.capabilities?.canGrade !== false;
+    },
+
     init() {
       const player = this.player();
       this.readOnly = player?.readOnly === true;
@@ -213,6 +217,15 @@ export function quizActivity(config = {}) {
         return;
       }
 
+      // Capabilities only — never infer from a missing grading_token.
+      if (! this.canGrade) {
+        this.error = this.strings.preview_no_grade
+          ?? 'Grading is unavailable in preview. Publish the lesson to test Submit.';
+        this.announce(this.error);
+
+        return;
+      }
+
       if (this.isBlocked) {
         this.error = this.strings.submit_unavailable ?? this.strings.no_attempts_remaining ?? '';
         this.announceBlockedOnce();
@@ -236,6 +249,14 @@ export function quizActivity(config = {}) {
       const lessonCode = playerEl?.dataset?.lessonCode ?? '';
       const player = playerEl && window.Alpine ? window.Alpine.$data(playerEl) : null;
       const versionToken = player?.manifest?.grading_token ?? '';
+
+      if (! versionToken) {
+        this.submitting = false;
+        this.error = this.strings.submit_unavailable ?? 'Grading is unavailable.';
+        this.announce(this.error);
+
+        return;
+      }
       const csrf =
         document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 
