@@ -40,13 +40,7 @@
             <div class="flex flex-wrap items-center gap-3">
                 {{-- Shared Chromebook carts: an obvious logout matters more
                      than any session lifetime setting. POST + CSRF, not a link. --}}
-                <div class="flex items-center gap-3">
-                    <p class="text-sm font-semibold text-slate-800">{{ auth()->user()->name }}</p>
-                    <form method="POST" action="{{ route('logout') }}">
-                        @csrf
-                        <button type="submit" class="player-btn player-btn-quiet player-btn-sm">Sign out</button>
-                    </form>
-                </div>
+                <x-auth.session />
 
                 {{-- No speech controls at all when the browser cannot speak. --}}
                 <template x-if="speech.supported">

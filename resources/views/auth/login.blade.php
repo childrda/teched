@@ -13,6 +13,18 @@
     <div class="player-card space-y-6">
         <h1 class="text-2xl font-bold">Sign in</h1>
 
+        @if (session('auth_notice'))
+            {{-- Expired-form notice: same summary pattern as validation errors
+                 (alert + autofocus) but visually distinct — not a failed credential. --}}
+            <div id="login-notice"
+                 class="rounded-md border-2 border-slate-500 bg-slate-50 p-3"
+                 role="alert"
+                 tabindex="-1"
+                 autofocus>
+                <p class="font-semibold text-slate-900">{{ session('auth_notice') }}</p>
+            </div>
+        @endif
+
         @if ($errors->any())
             {{-- autofocus moves the reader here after a failed attempt so the
                  generic message is announced rather than left unread. --}}
@@ -20,7 +32,7 @@
                  class="rounded-md border-2 border-amber-800 bg-amber-50 p-3"
                  role="alert"
                  tabindex="-1"
-                 autofocus>
+                 @if (! session('auth_notice')) autofocus @endif>
                 <p class="font-semibold text-amber-950">{{ $errors->first() }}</p>
             </div>
         @endif
@@ -36,7 +48,9 @@
                        value="{{ old('email') }}"
                        required
                        autocomplete="email"
-                       @if ($errors->any()) aria-describedby="login-errors" aria-invalid="true" @endif
+                       @if ($errors->any()) aria-describedby="login-errors" aria-invalid="true"
+                       @elseif (session('auth_notice')) aria-describedby="login-notice"
+                       @endif
                        class="mt-2 min-h-11 w-full rounded-md border-2 border-slate-500 bg-white px-3 py-2 text-base">
             </div>
 
@@ -47,7 +61,9 @@
                        type="password"
                        required
                        autocomplete="current-password"
-                       @if ($errors->any()) aria-describedby="login-errors" aria-invalid="true" @endif
+                       @if ($errors->any()) aria-describedby="login-errors" aria-invalid="true"
+                       @elseif (session('auth_notice')) aria-describedby="login-notice"
+                       @endif
                        class="mt-2 min-h-11 w-full rounded-md border-2 border-slate-500 bg-white px-3 py-2 text-base">
             </div>
 

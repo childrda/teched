@@ -5,6 +5,8 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -43,5 +45,31 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($request->is('api/*')) {
                 return response()->json(['message' => $e->getMessage()], 401);
             }
+        });
+
+        // Stale login forms (back button after session()->regenerate()) hit
+        // VerifyCsrfToken before the guest middleware. Recover instead of a
+        // bare 419. Laravel's Handler::prepareException wraps TokenMismatch
+        // as HttpException(419) before render callbacks run, so match that.
+        // JSON/XHR keeps the default 419 so player autosave/grading continue
+        // to treat it as a failed request.
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 419 || ! $e->getPrevious() instanceof TokenMismatchException) {
+                return null;
+            }
+
+            if ($request->expectsJson()) {
+                return null;
+            }
+
+            if ($request->user()) {
+                return redirect()
+                    ->route('home')
+                    ->with('auth_notice', 'You are already signed in.');
+            }
+
+            return redirect()
+                ->route('login')
+                ->with('auth_notice', 'This form expired. Please sign in again.');
         });
     })->create();

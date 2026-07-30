@@ -4,6 +4,9 @@ use App\Enums\UserRole;
 use App\Models\User;
 use App\Services\LessonPublisher;
 use Database\Seeders\UserSeeder;
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\Hash;
 
 beforeEach(fn () => $this->withoutVite());
@@ -156,3 +159,107 @@ test('UserSeeder refuses to run in production', function () {
     expect(fn () => (new UserSeeder())->run())
         ->toThrow(RuntimeException::class, 'production');
 });
+
+test('an authenticated user sees logout on home and the lesson player; a guest sees neither', function () {
+    $user = User::factory()->create();
+    $user->forceFill(['name' => 'Casey Student'])->save();
+    asStudent($user->fresh());
+
+    $lesson = createLessonWithAllBlockTypes();
+    app(LessonPublisher::class)->publish($lesson, User::factory()->create());
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Casey Student', false)
+        ->assertSee('Sign out', false)
+        ->assertSee('method="POST"', false)
+        ->assertSee(route('logout'), false);
+
+    $this->get("/lessons/{$lesson->code}")
+        ->assertOk()
+        ->assertSee('Casey Student', false)
+        ->assertSee('Sign out', false);
+
+    $this->post('/logout')->assertRedirect(route('login'));
+
+    $this->get('/')->assertOk()->assertDontSee('Sign out', false);
+    $this->get('/login')->assertOk()->assertDontSee('Sign out', false);
+});
+
+test('the login response carries no-store cache headers', function () {
+    $response = $this->get('/login')->assertOk()->assertHeader('Pragma', 'no-cache');
+
+    $cacheControl = strtolower((string) $response->headers->get('Cache-Control'));
+
+    expect($cacheControl)->toContain('no-store')
+        ->and($cacheControl)->toContain('no-cache')
+        ->and($cacheControl)->toContain('must-revalidate');
+});
+
+test('a TokenMismatchException on a web login POST redirects a guest to login with an expired-form notice', function () {
+    // VerifyCsrfToken is skipped while runningUnitTests(), so exercise the
+    // exception handler the same way a real mismatch would reach it.
+    $request = Request::create('/login', 'POST');
+    $request->setLaravelSession($this->app['session.store']);
+
+    $response = app(ExceptionHandler::class)->render(
+        $request,
+        new TokenMismatchException('CSRF token mismatch.')
+    );
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($response->headers->get('Location'))->toBe(route('login'));
+
+    // Follow the flash onto the login page for the screen-reader summary.
+    $this->withSession(['auth_notice' => 'This form expired. Please sign in again.'])
+        ->get('/login')
+        ->assertOk()
+        ->assertSee('This form expired. Please sign in again.', false)
+        ->assertSee('id="login-notice"', false)
+        ->assertDontSee('border-amber-800', false);
+});
+
+test('a TokenMismatchException while authenticated redirects to home', function () {
+    $user = makeStudent();
+
+    $request = Request::create('/login', 'POST');
+    $request->setLaravelSession($this->app['session.store']);
+    $request->setUserResolver(fn () => $user);
+
+    $response = app(ExceptionHandler::class)->render(
+        $request,
+        new TokenMismatchException('CSRF token mismatch.')
+    );
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($response->headers->get('Location'))->toBe(route('home'));
+});
+
+test('a JSON player write with a bad token still receives 419, not a redirect', function () {
+    $user = asStudent();
+    $lesson = createLessonWithAllBlockTypes();
+    app(LessonPublisher::class)->publish($lesson, User::factory()->create());
+    $attempt = app(App\Services\AttemptService::class)
+        ->resolveForPlayer($user, $lesson->fresh())['attempt'];
+
+    $request = Request::create(
+        "/player/attempts/{$attempt->id}/activity",
+        'POST',
+        ['active_seconds_delta' => 1],
+        server: [
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+        ]
+    );
+    $request->setLaravelSession($this->app['session.store']);
+    $request->setUserResolver(fn () => $user);
+
+    $response = app(ExceptionHandler::class)->render(
+        $request,
+        new TokenMismatchException('CSRF token mismatch.')
+    );
+
+    expect($response->getStatusCode())->toBe(419)
+        ->and($response->headers->get('Location'))->toBeNull();
+});
+

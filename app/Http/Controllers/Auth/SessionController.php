@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Illuminate\View\View;
 
 class SessionController extends Controller
 {
@@ -19,9 +19,14 @@ class SessionController extends Controller
         return Str::lower((string) $request->input('email')).'|'.$request->ip();
     }
 
-    public function create(): View
+    public function create(): Response
     {
-        return view('auth.login');
+        // Back-button after login must re-fetch: a cached page carries a
+        // _token for the pre-regenerate session and POST would 419.
+        return response()
+            ->view('auth.login')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate')
+            ->header('Pragma', 'no-cache');
     }
 
     public function store(Request $request): RedirectResponse
