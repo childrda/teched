@@ -10,17 +10,20 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div class="mx-auto max-w-5xl px-4 py-8">
-        <header class="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <header class="mb-8 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <x-app.logo size="sm" :link="true" />
+                <div class="flex flex-wrap items-center gap-4">
+                    @yield('nav')
+                    <a href="{{ route('home') }}" class="underline">{{ __('staff.back_home') }}</a>
+                    <x-auth.session />
+                </div>
+            </div>
             <div>
                 <h1 class="text-2xl font-semibold">@yield('heading')</h1>
                 @hasSection('intro')
                     <p class="mt-1 text-slate-600">@yield('intro')</p>
                 @endif
-            </div>
-            <div class="flex flex-wrap items-center gap-4">
-                @yield('nav')
-                <a href="{{ route('home') }}" class="underline">{{ __('staff.back_home') }}</a>
-                <x-auth.session />
             </div>
         </header>
 

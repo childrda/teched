@@ -12,8 +12,9 @@
     <div class="mx-auto max-w-3xl px-4 py-8">
         <header class="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h1 class="text-2xl font-semibold">{{ config('app.name', 'TechEd') }}</h1>
-                <p class="mt-1 text-slate-600">
+                <h1 class="sr-only">{{ config('app.name', 'Tech Learning System') }}</h1>
+                <x-app.logo size="lg" />
+                <p class="mt-3 text-slate-600">
                     {{ $isStaff ? __('home.staff_intro') : __('home.student_intro') }}
                 </p>
             </div>

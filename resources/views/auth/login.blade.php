@@ -11,6 +11,9 @@
 <body class="flex min-h-full items-center justify-center bg-slate-100 px-4 py-8 font-sans text-slate-900">
 
 <main class="w-full max-w-md">
+    <div class="mb-6 flex justify-center">
+        <x-app.logo size="lg" />
+    </div>
     <div class="player-card space-y-6">
         <h1 class="text-2xl font-bold">Sign in</h1>
 
