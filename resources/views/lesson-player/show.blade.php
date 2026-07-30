@@ -138,7 +138,11 @@
         @endforeach
     </main>
 
-    <footer class="sticky bottom-0 border-t-2 border-slate-400 bg-white">
+    {{-- data-drag-scroll-inset-bottom: drag auto-scroll measures this at each
+         dragstart so the edge zone sits above the sticky footer, including when
+         gateMessage grows or shrinks the bar. --}}
+    <footer class="sticky bottom-0 border-t-2 border-slate-400 bg-white"
+            data-drag-scroll-inset-bottom>
         <nav aria-label="Lesson navigation" class="mx-auto w-full max-w-4xl px-4 py-3">
             {{-- Why Continue is not yet available: visible text, not colour. --}}
             <p id="continue-hint"

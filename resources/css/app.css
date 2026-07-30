@@ -76,11 +76,12 @@
        browser's own, and no movement of ours is added on top of it.
 
        Sticky offset matches the non-sticky player header (none today) plus a
-       little air. Bank max-height is also the scroll-margin budget so
-       scrollIntoView / focus never parks a target under the stuck bank. */
+       little air. Bank max-height feeds scroll-margin only in single-column
+       layouts, where the bank overlays targets while stuck. */
     .placement-layout {
         --placement-sticky-top: 0.75rem;
-        --placement-bank-max-height: min(40vh, 14rem);
+        /* Single-column / image labeling: tall enough for a useful bank. */
+        --placement-bank-max-height: min(60vh, 32rem);
         --placement-scroll-clearance: calc(
             var(--placement-sticky-top) + var(--placement-bank-max-height) + 0.5rem
         );
@@ -99,10 +100,19 @@
         @apply md:col-span-2;
     }
 
-    /* Sticky so the bank stays reachable; capped so it cannot eat the viewport.
-       In the matching two-column layout it sits beside targets, so it does not
-       cover drop buttons. In a single column, scroll-margin on slots/hotspots
-       keeps focused or scrolled-to targets clear of this strip. */
+    /* Two-column: bank has its own column and does not overlay targets, so
+       clearance is only sticky air, and the height bound is the viewport —
+       not a short fixed rem that hides most of the terms. */
+    @media (min-width: 48rem) {
+        .placement-layout--matching {
+            --placement-bank-max-height: calc(100vh - 6rem);
+            --placement-scroll-clearance: calc(var(--placement-sticky-top) + 0.5rem);
+        }
+    }
+
+    /* Sticky so the bank stays reachable. Cap comes from the layout variables
+       above. In a single column, scroll-margin on slots/hotspots keeps focused
+       or scrolled-to targets clear of this strip. */
     .placement-bank {
         @apply sticky z-10 -mx-1 space-y-0 rounded-md bg-white px-1;
         top: var(--placement-sticky-top);
