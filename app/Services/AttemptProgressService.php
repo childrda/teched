@@ -80,9 +80,10 @@ class AttemptProgressService
     }
 
     /**
-     * A completed attempt is mastered when every gradable block in the pinned
-     * manifest has at least one passing submission. Gradable = collectsResponse().
-     * A lesson with no gradable blocks is mastered (stated deliberately).
+     * A completed attempt is mastered when every auto-gradable block in the
+     * pinned manifest has at least one passing submission. Manual-review
+     * blocks (short_response, CER) are not mastery gates. A lesson with no
+     * auto-gradable blocks is mastered (stated deliberately).
      */
     public function isMastered(LessonAttempt $attempt): bool
     {
@@ -143,7 +144,7 @@ class AttemptProgressService
                     continue;
                 }
 
-                if ($this->registry->get($type)->collectsResponse()) {
+                if ($this->registry->get($type)->isAutoGradable()) {
                     $ids[] = $blockId;
                 }
             }

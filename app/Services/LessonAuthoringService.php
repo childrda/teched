@@ -18,6 +18,7 @@ use App\Rules\LessonScopedAssetUrl;
 use App\Services\Authoring\AuthoringErrorFormatter;
 use App\Services\Authoring\DraftConfigValidator;
 use App\Services\Authoring\NestedIdReconciler;
+use App\Support\ImportAssetPlaceholder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -497,6 +498,10 @@ class LessonAuthoringService
                 } catch (ValidationException $e) {
                     $errors = array_merge($errors, $this->errorFormatter->fromValidationException($e, $context));
                 }
+
+                foreach ($this->assertNoImportPlaceholders($typeKey, $block->config ?? [], $page->title, $blockIndex) as $placeholderError) {
+                    $errors[] = $placeholderError;
+                }
             }
 
             $pageSummaries[] = [
@@ -855,6 +860,34 @@ class LessonAuthoringService
         }
 
         return [false, (new SchemaErrorFormatter)->format($error)];
+    }
+
+    /**
+     * Import placeholders are allowed in drafts but must never publish.
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private function assertNoImportPlaceholders(string $typeKey, array $config, string $pageTitle, int $blockIndex): array
+    {
+        $field = match ($typeKey) {
+            'image', 'file_link' => 'url',
+            'image_labeling' => 'image_url',
+            default => null,
+        };
+
+        if ($field === null) {
+            return [];
+        }
+
+        $value = $config[$field] ?? null;
+        if (! ImportAssetPlaceholder::isPlaceholder(is_string($value) ? $value : null)) {
+            return [];
+        }
+
+        return [
+            "{$pageTitle} / {$typeKey} #".($blockIndex + 1)." / {$field}: replace import placeholder before publish.",
+        ];
     }
 
     /**

@@ -38,7 +38,7 @@
                 <p class="text-slate-600">{{ __('home.no_classes') }}</p>
             @else
                 <table class="w-full border-collapse border-2 border-slate-400 bg-white text-left">
-                    <caption class="mb-2 text-left font-semibold">{{ __('home.staff_intro') }}</caption>
+                    <caption class="mb-2 text-left font-semibold">{{ __('home.classes_heading') }}</caption>
                     <thead>
                         <tr class="border-b-2 border-slate-400 bg-slate-100">
                             <th scope="col" class="px-3 py-2">Class</th>
@@ -66,7 +66,7 @@
                 <p class="text-slate-600">{{ __('home.no_assignments') }}</p>
             @else
                 <table class="w-full border-collapse border-2 border-slate-400 bg-white text-left">
-                    <caption class="mb-2 text-left font-semibold">{{ __('home.student_intro') }}</caption>
+                    <caption class="mb-2 text-left font-semibold">{{ __('home.assignments_heading') }}</caption>
                     <thead>
                         <tr class="border-b-2 border-slate-400 bg-slate-100">
                             <th scope="col" class="px-3 py-2">{{ __('staff.column_lesson') }}</th>

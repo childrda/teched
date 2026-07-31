@@ -312,6 +312,7 @@ test('manual path field accepts same-lesson storage and fixtures; rejects other 
     expect($pass('/storage/lessons/'.$lesson->uuid.'/a.png'))->toBeTrue()
         ->and($pass('/lessons/wel-6-1-1/welding-diagram.png'))->toBeTrue()
         ->and($pass('https://cdn.example.com/a.png'))->toBeTrue()
+        ->and($pass('/import-placeholder/image-required'))->toBeTrue()
         ->and($pass('/storage/lessons/'.(string) Str::uuid().'/a.png'))->toBeFalse()
         ->and($pass('/storage/lessons/'.$lesson->uuid.'/../x.png'))->toBeFalse()
         ->and($pass('C:\\uploads\\a.png'))->toBeFalse();

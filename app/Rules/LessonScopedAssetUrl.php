@@ -2,6 +2,7 @@
 
 namespace App\Rules;
 
+use App\Support\ImportAssetPlaceholder;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 
@@ -11,6 +12,9 @@ use Illuminate\Contracts\Validation\ValidationRule;
  * AssetUrl still governs publish-time shape (http(s) or root-relative). This
  * rule additionally refuses cross-lesson /storage/ paths, traversal, and
  * absolute filesystem paths so the manual field cannot defeat LessonAssetService.
+ *
+ * Draft-only import placeholders under /import-placeholder/ are allowed here;
+ * assertPublishReady refuses them before a version is created.
  */
 class LessonScopedAssetUrl implements ValidationRule
 {
@@ -57,6 +61,11 @@ class LessonScopedAssetUrl implements ValidationRule
             return;
         }
 
+        // Import placeholders are draft-only; publication checks reject them.
+        if (ImportAssetPlaceholder::isPlaceholder($value)) {
+            return;
+        }
+
         $prefix = '/storage/lessons/'.$this->lessonUuid.'/';
         if (str_starts_with($value, $prefix)) {
             return;
@@ -68,6 +77,6 @@ class LessonScopedAssetUrl implements ValidationRule
             return;
         }
 
-        $fail('The :attribute must be an http(s) URL, a /lessons/... fixture path, or a /storage/lessons/{lesson}/... upload path.');
+        $fail('The :attribute must be an http(s) URL, a /lessons/... fixture path, a /import-placeholder/... draft placeholder, or a /storage/lessons/{lesson}/... upload path.');
     }
 }

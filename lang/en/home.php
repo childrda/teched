@@ -2,8 +2,10 @@
 
 return [
     'title' => 'Home',
-    'student_intro' => 'Your assignments',
-    'staff_intro' => 'Your classes',
+    'student_intro' => 'Work from your classes — newest first.',
+    'assignments_heading' => 'Your assignments',
+    'staff_intro' => 'Classes you teach.',
+    'classes_heading' => 'Your classes',
     'practice_intro' => 'Practice (not assigned)',
     'no_assignments' => 'No class assignments yet.',
     'no_practice' => 'No practice attempts yet.',
