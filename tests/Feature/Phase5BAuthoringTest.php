@@ -21,6 +21,7 @@ use App\Services\StudentManifest;
 use App\Support\PlayerCapabilities;
 use Database\Seeders\UserSeeder;
 use Database\Seeders\WeldingLessonSeeder;
+use Filament\Forms\Components\Select;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -118,10 +119,125 @@ test('filament edit page renders the seeded WEL lesson with every interaction ty
         ])
         ->assertSuccessful();
 
-    $html = $pageEdit->html();
-    foreach (['Electrode', 'Weld Pool'] as $needle) {
-        expect(str_contains($html, $needle))->toBeTrue("WEL EditLessonPage HTML missing \"{$needle}\"");
+    // Bank labels in HTML alone are a false positive — they also appear in
+    // bank TextInputs. Assert resolved Select options instead (below).
+    expect($pageEdit->html())->toContain('Correct bank item');
+});
+
+/**
+ * Find the first answer_id Select under a named repeater (hotspots / slots).
+ */
+function phase5bAnswerSelect(mixed $livewire, string $repeater): ?Select
+{
+    $schema = $livewire->instance()->form;
+    $fields = $schema->getFlatFields(withHidden: true, withAbsoluteKeys: true);
+
+    foreach ($fields as $field) {
+        if (! $field instanceof Select) {
+            continue;
+        }
+        $path = (string) $field->getStatePath();
+        if (str_contains($path, ".{$repeater}.") && str_ends_with($path, '.answer_id')) {
+            return $field;
+        }
     }
+
+    return null;
+}
+
+/**
+ * Expected bank id → label from Livewire form state for the block that owns $select.
+ *
+ * @return array<string, string>
+ */
+function phase5bBankOptionMap(mixed $livewire, Select $select): array
+{
+    $bankPath = $select->resolveRelativeStatePath('../../bank');
+    $bank = data_get($livewire->get('data'), str($bankPath)->after('data.')->toString())
+        ?? data_get($livewire->instance(), $bankPath)
+        ?? [];
+
+    // Livewire state is under the form's statePath ('data'); absolute paths may
+    // already include that prefix depending on Filament version.
+    if ($bank === [] || $bank === null) {
+        $bank = data_get($livewire->instance(), $bankPath) ?? [];
+    }
+    if (($bank === [] || $bank === null) && str_starts_with($bankPath, 'data.')) {
+        $bank = data_get($livewire->get('data'), substr($bankPath, strlen('data.'))) ?? [];
+    }
+
+    return collect(is_array($bank) ? $bank : [])
+        ->filter(fn ($item) => is_array($item) && filled($item['id'] ?? null))
+        ->mapWithKeys(fn (array $item) => [$item['id'] => $item['label'] ?: $item['id']])
+        ->all();
+}
+
+test('image_labeling hotspot answer_id select resolves bank labels by id not via ../bank', function () {
+    $teacher = asTeacher();
+    $lesson = createOwnedLessonWithAllBlockTypes($teacher);
+    $page = $lesson->pages()
+        ->whereHas('blocks', fn ($q) => $q->where('type', 'image_labeling'))
+        ->firstOrFail();
+
+    $lw = Livewire::actingAs($teacher)
+        ->test(EditLessonPage::class, [
+            'record' => $page->getKey(),
+            'parentRecord' => $lesson,
+        ])
+        ->assertSuccessful();
+
+    $select = phase5bAnswerSelect($lw, 'hotspots');
+    expect($select)->toBeInstanceOf(Select::class);
+
+    // Lock the relative depth: one ../ lands inside the hotspots repeater;
+    // two reach block data where bank lives. If Filament nesting changes,
+    // these path assertions fail before a silent empty-options regression.
+    $oneUp = $select->resolveRelativeStatePath('../bank');
+    $twoUp = $select->resolveRelativeStatePath('../../bank');
+    expect($oneUp)->toMatch('/\.hotspots\.bank$/')
+        ->and($twoUp)->toMatch('/\.data\.bank$/')
+        ->and($twoUp)->not->toContain('.hotspots.bank');
+
+    $options = $select->getOptions();
+    $expected = phase5bBankOptionMap($lw, $select);
+
+    expect($options)->not->toBeEmpty()
+        ->and($expected)->not->toBeEmpty()
+        ->and($options)->toEqual($expected)
+        ->and(array_values($options))->toContain('Label');
+});
+
+test('matching slot answer_id select resolves bank labels by id not via ../bank', function () {
+    $teacher = asTeacher();
+    $lesson = createOwnedLessonWithAllBlockTypes($teacher);
+    $page = $lesson->pages()
+        ->whereHas('blocks', fn ($q) => $q->where('type', 'matching'))
+        ->firstOrFail();
+
+    $lw = Livewire::actingAs($teacher)
+        ->test(EditLessonPage::class, [
+            'record' => $page->getKey(),
+            'parentRecord' => $lesson,
+        ])
+        ->assertSuccessful();
+
+    $select = phase5bAnswerSelect($lw, 'slots');
+    expect($select)->toBeInstanceOf(Select::class);
+
+    $oneUp = $select->resolveRelativeStatePath('../bank');
+    $twoUp = $select->resolveRelativeStatePath('../../bank');
+    expect($oneUp)->toMatch('/\.slots\.bank$/')
+        ->and($twoUp)->toMatch('/\.data\.bank$/')
+        ->and($twoUp)->not->toContain('.slots.bank');
+
+    $options = $select->getOptions();
+    $expected = phase5bBankOptionMap($lw, $select);
+
+    expect($options)->not->toBeEmpty()
+        ->and($expected)->not->toBeEmpty()
+        ->and($options)->toEqual($expected)
+        ->and(array_values($options))->toContain('Term A')
+        ->and(array_values($options))->toContain('Term B');
 });
 
 test('app/Filament never imports the Filament 3/4 Forms Get or Set utilities', function () {

@@ -64,11 +64,27 @@ export function hotspotEditor(config = {}) {
     _dragging: false,
 
     init() {
-      this.$watch('hotspots', () => this.emit(), { deep: true });
+      this.$watch('hotspots', () => {
+        this.clampSelectedIndex();
+        this.emit();
+      }, { deep: true });
+      this.clampSelectedIndex();
     },
 
     emit() {
       this.$dispatch('hotspots-changed', { hotspots: this.hotspots });
+    },
+
+    clampSelectedIndex() {
+      if (this.hotspots.length === 0) {
+        this.selectedIndex = -1;
+
+        return;
+      }
+
+      if (this.selectedIndex < 0 || this.selectedIndex >= this.hotspots.length) {
+        this.selectedIndex = this.hotspots.length - 1;
+      }
     },
 
     select(index) {
@@ -93,6 +109,21 @@ export function hotspotEditor(config = {}) {
       this.selectedIndex = this.hotspots.length - 1;
       this.$nextTick(() => {
         this.$refs[`marker-${this.selectedIndex}`]?.focus?.();
+        this.announceSelected();
+      });
+    },
+
+    removeSelectedHotspot() {
+      if (this.selectedIndex < 0 || this.selectedIndex >= this.hotspots.length) {
+        return;
+      }
+
+      this.hotspots.splice(this.selectedIndex, 1);
+      this.clampSelectedIndex();
+      this.$nextTick(() => {
+        if (this.selectedIndex >= 0) {
+          this.$refs[`marker-${this.selectedIndex}`]?.focus?.();
+        }
         this.announceSelected();
       });
     },

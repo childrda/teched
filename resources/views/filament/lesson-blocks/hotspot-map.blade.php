@@ -1,7 +1,8 @@
 @php
-    $imageUrl = $get('../image_url') ?? $get('image_url') ?? '';
-    $hotspots = $get('../hotspots') ?? $get('hotspots') ?? [];
-    $bank = $get('../bank') ?? $get('bank') ?? [];
+    // hotspot_map sits on block data; bank/hotspots/image_url are siblings.
+    $imageUrl = $get('image_url') ?? '';
+    $hotspots = $get('hotspots') ?? [];
+    $bank = $get('bank') ?? [];
 @endphp
 
 <div
@@ -27,8 +28,14 @@
                 x-on:click="addHotspot()">
             Add hotspot
         </button>
+        <button type="button"
+                class="fi-btn relative grid-flow-col items-center justify-center font-semibold outline-none transition duration-75 focus-visible:ring-2 rounded-lg fi-btn-size-sm fi-btn-outline gap-1 px-2.5 py-1.5 text-sm inline-grid shadow-sm border border-gray-400 bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+                x-on:click="removeSelectedHotspot()"
+                x-bind:disabled="selectedIndex < 0">
+            Remove selected
+        </button>
         <p class="text-sm text-gray-600 dark:text-gray-300">
-            Click the image to place the selected hotspot. Arrow keys nudge 0.5%; Shift+Arrow nudges 2%.
+            Click the image to place the selected hotspot (highlighted). Arrow keys nudge 0.5%; Shift+Arrow nudges 2%.
             Numeric X%/Y% inputs below stay the precision path.
         </p>
     </div>
@@ -52,13 +59,17 @@
         <template x-for="(hotspot, index) in hotspots" :key="hotspot.id">
             <button
                 type="button"
-                class="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-amber-700 text-xs font-bold text-white shadow"
-                :class="selectedIndex === index ? 'ring-2 ring-amber-300' : ''"
+                class="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold text-white shadow"
+                :class="selectedIndex === index
+                    ? 'z-10 scale-125 border-sky-300 bg-sky-700 ring-4 ring-sky-300 ring-offset-2'
+                    : 'border-white bg-amber-700'"
+                :aria-current="selectedIndex === index ? 'true' : 'false'"
                 :style="`left: ${hotspot.x_pct}%; top: ${hotspot.y_pct}%;`"
-                :aria-label="`Hotspot ${hotspot.number}`"
+                :aria-label="selectedIndex === index ? `Selected hotspot ${hotspot.number}` : `Hotspot ${hotspot.number}`"
                 x-on:pointerdown="startDrag(index, $event)"
                 x-on:keydown="onMarkerKeydown(index, $event)"
                 x-on:focus="select(index)"
+                x-on:click.stop="select(index)"
                 x-text="hotspot.number"
             ></button>
         </template>

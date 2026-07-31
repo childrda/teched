@@ -1,11 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   clampPct,
+  hotspotEditor,
   nudgePercent,
   pointToPercent,
   roundPct,
 } from '../../resources/js/authoring/hotspot-editor.js';
+
+function makeEditor(hotspots = [], bank = [{ id: 'bank-1', label: 'Label' }]) {
+  const editor = hotspotEditor({
+    imageUrl: 'https://example.com/diagram.png',
+    hotspots,
+    bank,
+    newId: () => `id-${Math.random().toString(16).slice(2, 10)}`,
+  });
+
+  editor.$dispatch = vi.fn();
+  editor.$nextTick = (fn) => fn();
+  editor.$refs = {};
+  editor.$watch = vi.fn();
+  editor.init();
+
+  return editor;
+}
 
 describe('hotspot coordinate math', () => {
   it('clamps and rounds percentages', () => {
@@ -49,5 +67,87 @@ describe('hotspot coordinate math', () => {
     expect(nudgePercent(10, 2)).toBe(12);
     expect(nudgePercent(0, -0.5)).toBe(0);
     expect(nudgePercent(99, 2)).toBe(100);
+  });
+});
+
+describe('hotspot selection and placement', () => {
+  it('selects a newly added hotspot', () => {
+    const editor = makeEditor([
+      { id: 'h1', number: 1, x_pct: 10, y_pct: 10, answer_id: 'bank-1' },
+    ]);
+
+    expect(editor.selectedIndex).toBe(0);
+    editor.addHotspot();
+    expect(editor.selectedIndex).toBe(1);
+    expect(editor.hotspots).toHaveLength(2);
+  });
+
+  it('moves only the selected hotspot when the image is clicked', () => {
+    const editor = makeEditor([
+      { id: 'h1', number: 1, x_pct: 10, y_pct: 10, answer_id: 'bank-1' },
+      { id: 'h2', number: 2, x_pct: 20, y_pct: 20, answer_id: 'bank-1' },
+    ]);
+    editor.selectedIndex = 1;
+    editor.$refs.image = {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+    };
+
+    editor.onImageClick({ clientX: 75, clientY: 25 });
+
+    expect(editor.hotspots[0].x_pct).toBe(10);
+    expect(editor.hotspots[0].y_pct).toBe(10);
+    expect(editor.hotspots[1].x_pct).toBe(75);
+    expect(editor.hotspots[1].y_pct).toBe(25);
+  });
+
+  it('gives the next click to a second added hotspot rather than the first', () => {
+    const editor = makeEditor([]);
+    editor.$refs.image = {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+    };
+
+    editor.addHotspot();
+    editor.onImageClick({ clientX: 30, clientY: 40 });
+    expect(editor.hotspots[0].x_pct).toBe(30);
+    expect(editor.hotspots[0].y_pct).toBe(40);
+
+    editor.addHotspot();
+    expect(editor.selectedIndex).toBe(1);
+    editor.onImageClick({ clientX: 80, clientY: 90 });
+
+    expect(editor.hotspots[0].x_pct).toBe(30);
+    expect(editor.hotspots[0].y_pct).toBe(40);
+    expect(editor.hotspots[1].x_pct).toBe(80);
+    expect(editor.hotspots[1].y_pct).toBe(90);
+  });
+
+  it('clamps selectedIndex when the selected hotspot is removed', () => {
+    const editor = makeEditor([
+      { id: 'h1', number: 1, x_pct: 10, y_pct: 10, answer_id: 'bank-1' },
+      { id: 'h2', number: 2, x_pct: 20, y_pct: 20, answer_id: 'bank-1' },
+      { id: 'h3', number: 3, x_pct: 30, y_pct: 30, answer_id: 'bank-1' },
+    ]);
+    editor.selectedIndex = 2;
+    editor.removeSelectedHotspot();
+
+    expect(editor.hotspots).toHaveLength(2);
+    expect(editor.selectedIndex).toBe(1);
+
+    editor.removeSelectedHotspot();
+    editor.removeSelectedHotspot();
+    expect(editor.hotspots).toHaveLength(0);
+    expect(editor.selectedIndex).toBe(-1);
+  });
+
+  it('clamps selectedIndex when the array shrinks underneath it', () => {
+    const editor = makeEditor([
+      { id: 'h1', number: 1, x_pct: 10, y_pct: 10, answer_id: 'bank-1' },
+      { id: 'h2', number: 2, x_pct: 20, y_pct: 20, answer_id: 'bank-1' },
+    ]);
+    editor.selectedIndex = 1;
+    editor.hotspots.pop();
+    editor.clampSelectedIndex();
+
+    expect(editor.selectedIndex).toBe(0);
   });
 });

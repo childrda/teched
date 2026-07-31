@@ -42,8 +42,10 @@ class MatchingAuthoringSchema implements BlockAuthoringSchema
                     TextInput::make('description')->required(),
                     Select::make('answer_id')
                         ->label('Correct bank item')
+                        // Container is slots.{itemKey}; bank is a sibling of
+                        // slots under block data — two levels up, not one.
                         ->options(function (Get $get): array {
-                            $bank = $get('../bank') ?? [];
+                            $bank = $get('../../bank') ?? [];
 
                             return collect(is_array($bank) ? $bank : [])
                                 ->filter(fn ($item) => is_array($item) && filled($item['id'] ?? null))

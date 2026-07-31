@@ -68,8 +68,10 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
                         ->required(),
                     Select::make('answer_id')
                         ->label('Correct bank item')
+                        // Container is hotspots.{itemKey}; bank is a sibling of
+                        // hotspots under block data — two levels up, not one.
                         ->options(function (Get $get): array {
-                            $bank = $get('../bank') ?? [];
+                            $bank = $get('../../bank') ?? [];
 
                             return collect(is_array($bank) ? $bank : [])
                                 ->filter(fn ($item) => is_array($item) && filled($item['id'] ?? null))
@@ -82,6 +84,10 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
                         ->searchable(),
                     Textarea::make('description'),
                 ])
+                // Add/remove only via the hotspot map component so selection
+                // and coordinates stay in sync (see hotspot-editor.js).
+                ->addable(false)
+                ->deletable(false)
                 ->defaultItems(1)
                 ->live()
                 ->columnSpanFull(),
