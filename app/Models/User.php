@@ -17,10 +17,8 @@ class User extends Authenticatable implements FilamentUser
     use HasFactory, Notifiable;
 
     /**
-     * Mass-assignable attributes. role, google_id, and deactivated_at are
-     * deliberately absent: privilege and identity-binding fields are set
-     * explicitly via UserAccountService (forceFill) so a form cannot escalate
-     * or revive an account through request data.
+     * Mass-assignable attributes. role, google_id, deactivated_at, and
+     * preferences are deliberately absent — set via services (forceFill).
      *
      * @var list<string>
      */
@@ -43,6 +41,7 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'deactivated_at' => 'datetime',
+            'preferences' => 'array',
             'password' => 'hashed',
             'role' => UserRole::class,
         ];

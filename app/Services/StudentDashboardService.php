@@ -17,13 +17,21 @@ class StudentDashboardService
 {
     public function __construct(
         private readonly LessonAssignmentService $assignmentAccess,
+        private readonly PrimaryAttemptResolver $primaryAttempts,
+        private readonly UserPreferenceService $preferences,
     ) {
     }
 
     /**
      * @return array{
      *     assignments: list<array<string, mixed>>,
-     *     practice: list<array<string, mixed>>
+     *     hidden_assignments: list<array<string, mixed>>,
+     *     practice: list<array<string, mixed>>,
+     *     hidden_practice: list<array<string, mixed>>,
+     *     show_completed_assignments: bool,
+     *     show_completed_practice: bool,
+     *     completed_assignment_count: int,
+     *     completed_practice_count: int
      * }
      */
     public function forStudent(User $user): array
@@ -37,11 +45,14 @@ class StudentDashboardService
 
         $classIds = $memberships->keys()->all();
 
+        // available_at DESC, lessons.code ASC — code is a sequence *signal*, not a guarantee.
         $assignments = LessonAssignment::query()
             ->whereIn('school_class_id', $classIds === [] ? [0] : $classIds)
             ->with(['lesson', 'schoolClass', 'lessonVersion'])
-            ->orderByDesc('available_at')
-            ->orderByDesc('id')
+            ->leftJoin('lessons', 'lessons.id', '=', 'lesson_assignments.lesson_id')
+            ->orderByDesc('lesson_assignments.available_at')
+            ->orderBy('lessons.code')
+            ->select('lesson_assignments.*')
             ->get();
 
         $attemptGroups = LessonAttempt::query()
@@ -51,35 +62,80 @@ class StudentDashboardService
             ->get()
             ->groupBy('lesson_assignment_id');
 
-        $assignmentRows = [];
+        $visibleAssignments = [];
+        $hiddenAssignments = [];
 
         foreach ($assignments as $assignment) {
             $membership = $memberships->get($assignment->school_class_id);
             $attempts = $attemptGroups->get($assignment->id, collect());
-            $assignmentRows[] = $this->shapeAssignment($user, $assignment, $membership, $attempts);
+            $row = $this->shapeAssignment($user, $assignment, $membership, $attempts);
+
+            if ($this->isCompletedForToggle($row) && $assignment->isAvailable()) {
+                $hiddenAssignments[] = $row;
+            } else {
+                // Never hide unavailable assignments — they are ahead, not behind.
+                $visibleAssignments[] = $row;
+            }
         }
 
-        $practice = LessonAttempt::query()
+        $showCompletedAssignments = $this->preferences->showCompletedAssignments($user);
+        if ($showCompletedAssignments) {
+            $assignmentRows = array_merge($visibleAssignments, $hiddenAssignments);
+        } else {
+            $assignmentRows = $visibleAssignments;
+        }
+
+        $practiceGroups = LessonAttempt::query()
             ->where('user_id', $user->id)
             ->whereNull('lesson_assignment_id')
             ->with('lesson')
             ->orderByDesc('last_activity_at')
             ->get()
-            ->map(fn (LessonAttempt $attempt) => [
-                'lesson' => $attempt->lesson,
-                'attempt' => $attempt,
-                'status' => $attempt->status->value,
-                'status_label' => $this->statusLabel($attempt),
-                'action' => $attempt->status === AttemptStatus::InProgress ? 'resume' : 'view',
-                'url' => route('lessons.play', $attempt->lesson->code),
-            ])
-            ->values()
-            ->all();
+            ->groupBy('lesson_id');
+
+        $visiblePractice = [];
+        $hiddenPractice = [];
+
+        foreach ($practiceGroups as $attempts) {
+            $row = $this->shapePractice($attempts);
+            if ($row === null) {
+                continue;
+            }
+
+            if (($row['status'] ?? null) === 'completed') {
+                $hiddenPractice[] = $row;
+            } else {
+                $visiblePractice[] = $row;
+            }
+        }
+
+        $showCompletedPractice = $this->preferences->showCompletedPractice($user);
+        $practiceRows = $showCompletedPractice
+            ? array_merge($visiblePractice, $hiddenPractice)
+            : $visiblePractice;
 
         return [
             'assignments' => $assignmentRows,
-            'practice' => $practice,
+            'hidden_assignments' => $hiddenAssignments,
+            'practice' => $practiceRows,
+            'hidden_practice' => $hiddenPractice,
+            'show_completed_assignments' => $showCompletedAssignments,
+            'show_completed_practice' => $showCompletedPractice,
+            'completed_assignment_count' => count($hiddenAssignments),
+            'completed_practice_count' => count($hiddenPractice),
         ];
+    }
+
+    /**
+     * Hidden when primary attempt is completed. Superseded-only stays visible.
+     * In-progress (even with older completed) stays visible. Archived completed
+     * belongs in the completed group. Unavailable is never hidden.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function isCompletedForToggle(array $row): bool
+    {
+        return ($row['status'] ?? null) === 'completed';
     }
 
     /**
@@ -94,7 +150,7 @@ class StudentDashboardService
     ): array {
         $active = $membership?->isActive() === true;
         $available = $assignment->isAvailable();
-        $resolved = $this->pickPrimary($attempts);
+        $primary = $this->primaryAttempts->resolve($attempts);
         $mayStart = $this->assignmentAccess->mayStartAttempt($user, $assignment);
         $mayResume = $this->assignmentAccess->mayResumeAttempt($user, $assignment);
         $mayView = $this->assignmentAccess->mayViewAssignment($user, $assignment);
@@ -103,15 +159,25 @@ class StudentDashboardService
         $url = null;
         $status = 'not_started';
 
-        if ($resolved['attempt'] !== null && $resolved['attempt']->status === AttemptStatus::InProgress) {
+        if ($primary !== null && $primary->status === AttemptStatus::InProgress) {
             $status = 'in_progress';
             if ($mayResume) {
                 $action = 'resume';
                 $url = route('player.assignments.show', $assignment);
             }
-        } elseif ($resolved['attempt'] !== null && $resolved['attempt']->status === AttemptStatus::Completed) {
+        } elseif ($primary !== null && $primary->status === AttemptStatus::Completed) {
             $status = 'completed';
             if ($mayView) {
+                $action = 'view';
+                $url = route('player.assignments.show', $assignment);
+            }
+        } elseif ($primary !== null && $primary->status === AttemptStatus::Superseded) {
+            // Superseded-only history is not "completed" for the toggle.
+            $status = 'not_started';
+            if ($mayStart) {
+                $action = 'start';
+                $url = route('player.assignments.show', $assignment);
+            } elseif ($mayView) {
                 $action = 'view';
                 $url = route('player.assignments.show', $assignment);
             }
@@ -124,7 +190,6 @@ class StudentDashboardService
             $action = 'start';
             $url = route('player.assignments.show', $assignment);
         } else {
-            // Inactive class or archived assignment with no attempt yet.
             $status = 'not_started';
             $action = 'none';
         }
@@ -161,24 +226,23 @@ class StudentDashboardService
 
     /**
      * @param  Collection<int, LessonAttempt>  $attempts
-     * @return array{attempt: ?LessonAttempt, read_only: bool}
+     * @return array<string, mixed>|null
      */
-    private function pickPrimary(Collection $attempts): array
+    private function shapePractice(Collection $attempts): ?array
     {
-        $inProgress = $attempts->first(
-            fn (LessonAttempt $attempt) => $attempt->status === AttemptStatus::InProgress
-        );
-
-        if ($inProgress !== null) {
-            return ['attempt' => $inProgress, 'read_only' => false];
+        $primary = $this->primaryAttempts->resolve($attempts);
+        if ($primary === null || $primary->lesson === null) {
+            return null;
         }
 
-        $completed = $attempts
-            ->filter(fn (LessonAttempt $attempt) => $attempt->status === AttemptStatus::Completed)
-            ->sortByDesc(fn (LessonAttempt $a) => [$a->completed_at?->timestamp ?? 0, $a->id])
-            ->first();
-
-        return ['attempt' => $completed, 'read_only' => $completed !== null];
+        return [
+            'lesson' => $primary->lesson,
+            'attempt' => $primary,
+            'status' => $primary->status->value,
+            'status_label' => $this->statusLabel($primary),
+            'action' => $primary->status === AttemptStatus::InProgress ? 'resume' : 'view',
+            'url' => route('lessons.play', $primary->lesson->code),
+        ];
     }
 
     private function statusLabel(LessonAttempt $attempt): string

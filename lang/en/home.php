@@ -23,4 +23,8 @@ return [
     'view_classes' => 'View classes',
     'blocked_attempts' => 'Blocked attempts',
     'class_label' => 'Class: :name',
+    'show_completed_assignments' => 'Show :count completed',
+    'hide_completed_assignments' => 'Hide :count completed',
+    'show_completed_practice' => 'Show :count completed practice lessons',
+    'hide_completed_practice' => 'Hide :count completed practice lessons',
 ];

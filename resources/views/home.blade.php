@@ -62,7 +62,7 @@
                 <div class="mt-4">{{ $classes->links() }}</div>
             @endif
         @else
-            @if (count($assignments) === 0)
+            @if (count($assignments) === 0 && $completed_assignment_count === 0)
                 <p class="text-slate-600">{{ __('home.no_assignments') }}</p>
             @else
                 <table class="w-full border-collapse border-2 border-slate-400 bg-white text-left">
@@ -110,10 +110,23 @@
                         @endforeach
                     </tbody>
                 </table>
+
+                @if ($completed_assignment_count > 0)
+                    <form method="post" action="{{ route('preferences.student-dashboard') }}" class="mt-3">
+                        @csrf
+                        <input type="hidden" name="show_completed_assignments"
+                               value="{{ $show_completed_assignments ? 0 : 1 }}">
+                        <button type="submit" class="text-sm font-medium underline">
+                            {{ $show_completed_assignments
+                                ? __('home.hide_completed_assignments', ['count' => $completed_assignment_count])
+                                : __('home.show_completed_assignments', ['count' => $completed_assignment_count]) }}
+                        </button>
+                    </form>
+                @endif
             @endif
 
             <h2 class="mt-10 text-xl font-semibold">{{ __('home.practice_intro') }}</h2>
-            @if (count($practice) === 0)
+            @if (count($practice) === 0 && $completed_practice_count === 0)
                 <p class="mt-3 text-slate-600">{{ __('home.no_practice') }}</p>
             @else
                 <ul class="mt-3 space-y-3">
@@ -130,6 +143,19 @@
                         </li>
                     @endforeach
                 </ul>
+
+                @if ($completed_practice_count > 0)
+                    <form method="post" action="{{ route('preferences.student-dashboard') }}" class="mt-3">
+                        @csrf
+                        <input type="hidden" name="show_completed_practice"
+                               value="{{ $show_completed_practice ? 0 : 1 }}">
+                        <button type="submit" class="text-sm font-medium underline">
+                            {{ $show_completed_practice
+                                ? __('home.hide_completed_practice', ['count' => $completed_practice_count])
+                                : __('home.show_completed_practice', ['count' => $completed_practice_count]) }}
+                        </button>
+                    </form>
+                @endif
             @endif
         @endif
     </div>

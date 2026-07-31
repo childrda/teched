@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\GradeBlockController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LessonPlayerController;
+use App\Http\Controllers\StudentPreferencesController;
 use App\Http\Controllers\Player\AssignmentPlayerController;
 use App\Http\Controllers\Player\ContinuePageController;
 use App\Http\Controllers\Player\RecordActivityController;
@@ -22,6 +23,10 @@ use App\Http\Controllers\Staff\ReviewBlockSubmissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)->middleware('auth')->name('home');
+
+Route::post('/preferences/student-dashboard', StudentPreferencesController::class)
+    ->middleware('auth')
+    ->name('preferences.student-dashboard');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])->name('login');
@@ -75,6 +80,8 @@ Route::middleware(['auth', 'staff'])->prefix('staff')->name('staff.')->group(fun
     Route::get('/attempts/{attempt}', AttemptShowController::class)->name('attempts.show');
 
     Route::get('/blocked-attempts', BlockedAttemptsController::class)->name('blocked-attempts');
+    Route::get('/review-queue', \App\Http\Controllers\Staff\ReviewQueueController::class)
+        ->name('review-queue');
 
     Route::post('/attempts/{attempt}/grant-retries', GrantRetriesController::class)
         ->name('attempts.grant-retries');

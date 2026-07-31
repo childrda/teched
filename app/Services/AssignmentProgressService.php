@@ -17,8 +17,10 @@ use Illuminate\Support\Collection;
  */
 class AssignmentProgressService
 {
-    public function __construct(private readonly BlockedAttemptService $blocked)
-    {
+    public function __construct(
+        private readonly BlockedAttemptService $blocked,
+        private readonly PrimaryAttemptResolver $primaryAttempts,
+    ) {
     }
 
     /**
@@ -232,33 +234,7 @@ class AssignmentProgressService
      */
     public function primaryAttempt(Collection $attempts): ?LessonAttempt
     {
-        $inProgress = $attempts->first(
-            fn (LessonAttempt $attempt) => $attempt->status === AttemptStatus::InProgress
-        );
-
-        if ($inProgress !== null) {
-            return $inProgress;
-        }
-
-        $completed = $attempts
-            ->filter(fn (LessonAttempt $attempt) => $attempt->status === AttemptStatus::Completed)
-            ->sortByDesc(fn (LessonAttempt $attempt) => [
-                $attempt->completed_at?->timestamp ?? 0,
-                $attempt->id,
-            ])
-            ->first();
-
-        if ($completed !== null) {
-            return $completed;
-        }
-
-        return $attempts
-            ->filter(fn (LessonAttempt $attempt) => $attempt->status === AttemptStatus::Superseded)
-            ->sortByDesc(fn (LessonAttempt $attempt) => [
-                $attempt->superseded_at?->timestamp ?? 0,
-                $attempt->id,
-            ])
-            ->first();
+        return $this->primaryAttempts->resolve($attempts);
     }
 
     private function statusLabel(?LessonAttempt $attempt): string

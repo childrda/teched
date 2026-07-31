@@ -33,6 +33,10 @@ class HomeController extends Controller
                 'classes' => $classes,
                 'assignments' => [],
                 'practice' => [],
+                'show_completed_assignments' => false,
+                'show_completed_practice' => false,
+                'completed_assignment_count' => 0,
+                'completed_practice_count' => 0,
             ]);
         }
 
@@ -43,6 +47,10 @@ class HomeController extends Controller
             'classes' => null,
             'assignments' => $data['assignments'],
             'practice' => $data['practice'],
+            'show_completed_assignments' => $data['show_completed_assignments'],
+            'show_completed_practice' => $data['show_completed_practice'],
+            'completed_assignment_count' => $data['completed_assignment_count'],
+            'completed_practice_count' => $data['completed_practice_count'],
         ]);
     }
 }
