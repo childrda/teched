@@ -11,6 +11,8 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ViewField;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Str;
 
@@ -44,52 +46,73 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
                 ->defaultItems(1)
                 ->live()
                 ->columnSpanFull(),
-            ViewField::make('hotspot_map')
-                ->label('Hotspot map')
-                ->view('filament.lesson-blocks.hotspot-map')
-                ->dehydrated(false)
-                ->columnSpanFull(),
-            Repeater::make('hotspots')
+            // Desktop: image ~2/3, hotspot fields ~1/3. Stacks below lg.
+            Grid::make([
+                'default' => 1,
+                'lg' => 3,
+            ])
                 ->schema([
-                    Hidden::make('id')->default(fn () => (string) Str::ulid()),
-                    TextInput::make('number')->numeric()->minValue(1)->required(),
-                    TextInput::make('x_pct')
-                        ->label('X %')
-                        ->numeric()
-                        ->minValue(0)
-                        ->maxValue(100)
-                        ->required()
-                        ->helperText('Precision path / fallback when the image cannot load.'),
-                    TextInput::make('y_pct')
-                        ->label('Y %')
-                        ->numeric()
-                        ->minValue(0)
-                        ->maxValue(100)
-                        ->required(),
-                    Select::make('answer_id')
-                        ->label('Correct bank item')
-                        // Container is hotspots.{itemKey}; bank is a sibling of
-                        // hotspots under block data — two levels up, not one.
-                        ->options(function (Get $get): array {
-                            $bank = $get('../../bank') ?? [];
+                    ViewField::make('hotspot_map')
+                        ->label('Hotspot map')
+                        ->view('filament.lesson-blocks.hotspot-map')
+                        ->dehydrated(false)
+                        ->columnSpan([
+                            'default' => 1,
+                            'lg' => 2,
+                        ]),
+                    Group::make([
+                        Repeater::make('hotspots')
+                            ->schema([
+                                Hidden::make('id')->default(fn () => (string) Str::ulid()),
+                                TextInput::make('number')->numeric()->minValue(1)->required(),
+                                TextInput::make('x_pct')
+                                    ->label('X %')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->maxValue(100)
+                                    ->required()
+                                    ->helperText('Precision path / fallback when the image cannot load.'),
+                                TextInput::make('y_pct')
+                                    ->label('Y %')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->maxValue(100)
+                                    ->required(),
+                                Select::make('answer_id')
+                                    ->label('Correct bank item')
+                                    // Container is hotspots.{itemKey}; bank is a sibling of
+                                    // hotspots under block data — two levels up, not one.
+                                    ->options(function (Get $get): array {
+                                        $bank = $get('../../bank') ?? [];
 
-                            return collect(is_array($bank) ? $bank : [])
-                                ->filter(fn ($item) => is_array($item) && filled($item['id'] ?? null))
-                                ->mapWithKeys(fn (array $item) => [
-                                    $item['id'] => $item['label'] ?: $item['id'],
-                                ])
-                                ->all();
-                        })
-                        ->required()
-                        ->searchable(),
-                    Textarea::make('description'),
+                                        return collect(is_array($bank) ? $bank : [])
+                                            ->filter(fn ($item) => is_array($item) && filled($item['id'] ?? null))
+                                            ->mapWithKeys(fn (array $item) => [
+                                                $item['id'] => $item['label'] ?: $item['id'],
+                                            ])
+                                            ->all();
+                                    })
+                                    ->required()
+                                    ->searchable(),
+                                Textarea::make('description'),
+                            ])
+                            // Add/remove only via the hotspot map component so selection
+                            // and coordinates stay in sync (see hotspot-editor.js).
+                            ->addable(false)
+                            ->deletable(false)
+                            ->defaultItems(1)
+                            ->live()
+                            ->columnSpanFull(),
+                        ViewField::make('hotspot_add_bottom')
+                            ->label('')
+                            ->view('filament.lesson-blocks.hotspot-add-bottom')
+                            ->dehydrated(false)
+                            ->columnSpanFull(),
+                    ])->columnSpan([
+                        'default' => 1,
+                        'lg' => 1,
+                    ]),
                 ])
-                // Add/remove only via the hotspot map component so selection
-                // and coordinates stay in sync (see hotspot-editor.js).
-                ->addable(false)
-                ->deletable(false)
-                ->defaultItems(1)
-                ->live()
                 ->columnSpanFull(),
             ...$this->gradingFields(includeReveal: true),
         ];

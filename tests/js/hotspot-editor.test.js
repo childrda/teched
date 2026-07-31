@@ -150,4 +150,45 @@ describe('hotspot selection and placement', () => {
 
     expect(editor.selectedIndex).toBe(0);
   });
+
+  it('top and bottom add controls share addHotspot and select the new marker', () => {
+    const editor = makeEditor([]);
+    // Both Blade buttons ultimately invoke this one function (top: direct call,
+    // bottom: window teched-add-hotspot → same addHotspot).
+    const sharedAdd = editor.addHotspot.bind(editor);
+
+    sharedAdd();
+    expect(editor.selectedIndex).toBe(0);
+    expect(editor.hotspots).toHaveLength(1);
+
+    sharedAdd();
+    expect(editor.selectedIndex).toBe(1);
+    expect(editor.hotspots).toHaveLength(2);
+    expect(editor.hotspots[0].x_pct).toBe(50);
+    expect(editor.hotspots[1].x_pct).toBe(50);
+  });
+
+  it('keeps coordinates as percentages including image edges 0 and 100', () => {
+    expect(clampPct(0)).toBe(0);
+    expect(clampPct(100)).toBe(100);
+
+    const editor = makeEditor([
+      { id: 'h1', number: 1, x_pct: 50, y_pct: 50, answer_id: 'bank-1' },
+    ]);
+    editor.$refs.image = {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 100 }),
+    };
+
+    editor.onImageClick({ clientX: 0, clientY: 0 });
+    expect(editor.hotspots[0].x_pct).toBe(0);
+    expect(editor.hotspots[0].y_pct).toBe(0);
+
+    editor.onImageClick({ clientX: 200, clientY: 100 });
+    expect(editor.hotspots[0].x_pct).toBe(100);
+    expect(editor.hotspots[0].y_pct).toBe(100);
+
+    // Never stored as CSS pixels.
+    expect(editor.hotspots[0].x_pct).toBeLessThanOrEqual(100);
+    expect(String(editor.hotspots[0].x_pct)).not.toMatch(/px/);
+  });
 });

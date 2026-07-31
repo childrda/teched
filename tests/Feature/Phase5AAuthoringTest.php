@@ -679,12 +679,16 @@ test('default_allow_read_aloud seeds new pages only', function () {
         ->and($fresh[1]->settings['allow_read_aloud'])->toBeFalse();
 });
 
-test('player vite entry points remain unchanged by filament install', function () {
+test('player vite entry points remain unchanged when the admin theme is added', function () {
     $vite = file_get_contents(base_path('vite.config.js'));
     $appJs = file_get_contents(base_path('resources/js/app.js'));
 
-    expect($vite)->toContain("resources/js/app.js")
-        ->and($vite)->not->toContain('filament')
+    // Player entries stay; the Filament admin theme is an additional CSS entry only.
+    expect($vite)->toContain("resources/css/app.css")
+        ->and($vite)->toContain("resources/js/app.js")
+        ->and($vite)->toContain("resources/js/authoring/hotspot-editor-register.js")
+        ->and($vite)->toContain("resources/css/filament/admin/theme.css")
         ->and($appJs)->toContain('./lesson-player/player')
+        ->and($appJs)->not->toContain('filament')
         ->and(file_exists(base_path('resources/js/lesson-player/player.js')))->toBeTrue();
 });

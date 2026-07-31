@@ -1,0 +1,9 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+/*
+ * Paths are relative to this file (resources/css/filament/admin/).
+ * Scan only panel surfaces that carry utility class strings — not the
+ * student player stylesheet and not the whole application tree.
+ */
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
