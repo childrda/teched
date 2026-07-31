@@ -18,6 +18,7 @@ use App\Http\Controllers\Staff\ConfirmRestartController;
 use App\Http\Controllers\Staff\GrantRetriesController;
 use App\Http\Controllers\Staff\ReopenAttemptController;
 use App\Http\Controllers\Staff\RestartAttemptController;
+use App\Http\Controllers\Staff\ReviewBlockSubmissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)->middleware('auth')->name('home');
@@ -75,6 +76,8 @@ Route::middleware(['auth', 'staff'])->prefix('staff')->name('staff.')->group(fun
 
     Route::post('/attempts/{attempt}/grant-retries', GrantRetriesController::class)
         ->name('attempts.grant-retries');
+    Route::post('/attempts/{attempt}/submissions/{submission}/review', ReviewBlockSubmissionController::class)
+        ->name('attempts.submissions.review');
     Route::get('/attempts/{attempt}/restart/confirm', ConfirmRestartController::class)
         ->name('attempts.restart.confirm');
     Route::post('/attempts/{attempt}/restart', RestartAttemptController::class)

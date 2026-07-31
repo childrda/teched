@@ -181,6 +181,10 @@ class ContinuePageController extends Controller
                 ->where('block_id', $blockId)
                 ->max('attempt_number') + 1;
 
+            // A new snapshot is intentionally unreviewed. Reviews belong to a
+            // specific submission and never move forward — previously reviewed
+            // work correctly reappears as awaiting review. Do not "fix" this
+            // by copying reviews onto the new row.
             BlockSubmission::query()->create([
                 'lesson_attempt_id' => $attempt->id,
                 'lesson_version_id' => $attempt->lesson_version_id,

@@ -18,6 +18,7 @@ class AttemptDetailPresenter
         private readonly TeacherGradingResult $teacherResults,
         private readonly RetryPolicy $retries,
         private readonly BlockedAttemptService $blocked,
+        private readonly SubmissionReviewService $reviews,
     ) {
     }
 
@@ -32,7 +33,8 @@ class AttemptDetailPresenter
             'lessonVersion',
             'assignment.schoolClass',
             'blockStates',
-            'blockSubmissions',
+            'blockSubmissions.latestReview.reviewedBy',
+            'blockSubmissions.reviews.reviewedBy',
             'retryGrants.grantedBy',
             'reopens.reopenedBy',
             'supersededBy',
@@ -164,17 +166,38 @@ class AttemptDetailPresenter
 
         $history = [];
         $teacherResults = [];
+        $isLatestSubmission = true;
 
         foreach ($submissions->sortByDesc('attempt_number') as $submission) {
+            $needsReview = $this->reviews->submissionNeedsReview($submission);
+            $reviewHistory = $submission->requires_manual_review
+                ? $this->reviews->teacherHistory($submission)
+                : [];
+            $latestReview = $reviewHistory[0] ?? null;
+
+            if ($latestReview !== null) {
+                $latestReview['review_count'] = count($reviewHistory);
+            }
+
             $history[] = [
+                'id' => $submission->id,
                 'attempt_number' => $submission->attempt_number,
                 'submitted_at' => $submission->submitted_at,
                 'response' => $submission->response,
                 'requires_manual_review' => (bool) $submission->requires_manual_review,
+                'needs_review' => $needsReview,
+                'is_latest_submission' => $isLatestSubmission,
                 'passed' => $submission->passed,
                 'score' => $submission->score,
                 'max_score' => $submission->max_score,
+                'points_possible' => $submission->requires_manual_review
+                    ? $this->reviews->pointsPossible($typeKey, $config)
+                    : null,
+                'latest_review' => $latestReview,
+                'review_history' => $reviewHistory,
             ];
+
+            $isLatestSubmission = false;
 
             if ($type !== null && (is_array($submission->grading_result) || $submission->requires_manual_review)) {
                 $mapped = $this->teacherResults->map($submission, $type, $config, $grading);
@@ -216,7 +239,10 @@ class AttemptDetailPresenter
             'first_result' => $firstMapped,
             'latest_result' => $latestMapped,
             'all_results' => $teacherResults,
-            'needs_review' => $submissions->contains(fn ($row) => $row->requires_manual_review === true),
+            // Per submission, not "any historical review on the block".
+            'needs_review' => $submissions->contains(
+                fn ($row) => $this->reviews->submissionNeedsReview($row)
+            ),
             'emphasize_first' => (bool) ($grading['record_first_attempt'] ?? false),
         ];
     }

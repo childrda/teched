@@ -16,6 +16,10 @@
             'characters_over' => __('response.characters_over'),
             'characters_met' => __('response.characters_met'),
             'characters_needed' => __('response.characters_needed'),
+            'awaiting_review' => __('response.awaiting_review'),
+            'reviewed_heading' => __('response.reviewed_heading'),
+            'reviewed_score' => __('response.reviewed_score'),
+            'reviewed_no_score' => __('response.reviewed_no_score'),
         ],
     ];
 @endphp
@@ -58,4 +62,23 @@
                x-text="hintFor({{ $fieldIdJs }})"></p>
         </div>
     @endforeach
+
+    <div class="rounded border-2 border-slate-400 bg-slate-50 p-3 text-sm" x-show="review" x-cloak>
+        <template x-if="review && ! review.reviewed">
+            <p x-text="strings.awaiting_review"></p>
+        </template>
+        <template x-if="review && review.reviewed">
+            <div>
+                <p class="font-semibold" x-text="strings.reviewed_heading"></p>
+                <p class="mt-1"
+                   x-text="review.score
+                        ? strings.reviewed_score
+                            .replace(':awarded', review.score.awarded)
+                            .replace(':possible', review.score.possible)
+                            .replace(':percent', review.score.percentage)
+                        : strings.reviewed_no_score"></p>
+                <p class="mt-2 whitespace-pre-wrap" x-show="review.comment" x-text="review.comment"></p>
+            </div>
+        </template>
+    </div>
 </div>

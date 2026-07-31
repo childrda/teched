@@ -135,12 +135,18 @@
                 @else
                     <ul class="mt-3 space-y-4">
                         @foreach ($block['submitted_history'] as $submission)
-                            <li class="rounded border border-slate-300 p-3">
+                            <li @class([
+                                'rounded border p-3',
+                                'border-amber-500 border-2' => $submission['is_latest_submission'] ?? false,
+                                'border-slate-300' => ! ($submission['is_latest_submission'] ?? false),
+                            ])>
                                 <p class="font-semibold">
                                     {{ __('staff.submission_number', ['number' => $submission['attempt_number']]) }}
                                     — {{ __('staff.submitted_at', ['when' => $submission['submitted_at']?->toDayDateTimeString() ?? '—']) }}
-                                    @if ($submission['requires_manual_review'])
-                                        — {{ __('staff.needs_review') }}
+                                    @if ($submission['needs_review'] ?? false)
+                                        — {{ __('staff.awaiting_review') }}
+                                    @elseif ($submission['requires_manual_review'] && ($submission['latest_review']['reviewed'] ?? false))
+                                        — {{ __('staff.reviewed') }}
                                     @endif
                                 </p>
                                 @if ($submission['score'] !== null)
@@ -154,6 +160,13 @@
                                     </p>
                                 @endif
                                 <pre class="mt-2 overflow-x-auto rounded border border-slate-200 bg-slate-50 p-2 text-sm">{{ json_encode($submission['response'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+
+                                @if ($submission['requires_manual_review'])
+                                    @include('staff.attempts.partials.manual-review', [
+                                        'attempt' => $attempt,
+                                        'submission' => $submission,
+                                    ])
+                                @endif
                             </li>
                         @endforeach
                     </ul>

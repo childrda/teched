@@ -18,6 +18,7 @@ export function shortResponseActivity(config = {}) {
     strings: config.strings ?? {},
     value: '',
     readOnly: false,
+    review: null,
     disposeContributor: null,
 
     init() {
@@ -25,6 +26,7 @@ export function shortResponseActivity(config = {}) {
 
       this.readOnly = player?.readOnly === true;
       this.restoreState(player?.stateFor?.(this.blockId));
+      this.review = player?.reviewFor?.(this.blockId) ?? null;
     },
 
     destroy() {

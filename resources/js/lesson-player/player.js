@@ -281,6 +281,11 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       return this.attempt?.submissions?.[blockId] ?? null;
     },
 
+    /** Student-safe manual review for short_response/cer (latest submission only). */
+    reviewFor(blockId) {
+      return this.attempt?.reviews?.[blockId] ?? null;
+    },
+
     shuffleSeed() {
       return this.attempt?.shuffle_seed ?? '';
     },

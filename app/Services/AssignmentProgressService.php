@@ -56,7 +56,7 @@ class AssignmentProgressService
                     'passed',
                     'requires_manual_review',
                     'submitted_at',
-                ]),
+                ])->with('latestReview'),
                 'retryGrants',
                 'lessonVersion',
             ])
@@ -81,9 +81,8 @@ class AssignmentProgressService
                     $blockedCount++;
                 }
 
-                if ($row['needs_review']) {
-                    $needsReviewCount++;
-                }
+                // Count every unreviewed submission, not students.
+                $needsReviewCount += $row['unreviewed_submission_count'];
             } elseif ($row['attempt_count'] > 0) {
                 $withdrawnRows[] = $row;
             }
@@ -134,7 +133,7 @@ class AssignmentProgressService
                     'passed',
                     'requires_manual_review',
                     'submitted_at',
-                ]),
+                ])->with('latestReview'),
                 'retryGrants',
                 'lessonVersion',
             ])
@@ -169,12 +168,18 @@ class AssignmentProgressService
     private function shapeRow(User $user, Collection $attempts, bool $active): array
     {
         $primary = $this->primaryAttempt($attempts);
-        $needsReview = false;
+        $unreviewedCount = 0;
 
         if ($primary !== null) {
-            $needsReview = $primary->blockSubmissions
-                ->contains(fn ($row) => $row->requires_manual_review === true);
+            // Assignment overview receives counts/flags only — never review
+            // comments or private notes (those stay on attempt detail).
+            $unreviewedCount = $primary->blockSubmissions
+                ->filter(fn ($row) => $row->requires_manual_review === true
+                    && $row->latestReview === null)
+                ->count();
         }
+
+        $needsReview = $unreviewedCount > 0;
 
         $blocked = $primary !== null
             && $primary->status === AttemptStatus::InProgress
@@ -216,6 +221,7 @@ class AssignmentProgressService
             'active_seconds' => $primary?->active_seconds ?? 0,
             'blocked' => $blocked,
             'needs_review' => $needsReview,
+            'unreviewed_submission_count' => $unreviewedCount,
         ];
     }
 

@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Exceptions\ImmutableBlockSubmissionException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * An immutable record of something a student submitted. Once created, the
@@ -76,5 +78,19 @@ class BlockSubmission extends Model
     public function lessonVersion(): BelongsTo
     {
         return $this->belongsTo(LessonVersion::class);
+    }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(BlockSubmissionReview::class);
+    }
+
+    /**
+     * Deterministic latest review: created_at DESC, id DESC (not timestamp alone).
+     */
+    public function latestReview(): HasOne
+    {
+        return $this->hasOne(BlockSubmissionReview::class)
+            ->ofMany(['created_at' => 'max', 'id' => 'max']);
     }
 }

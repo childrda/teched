@@ -37,6 +37,7 @@ class AttemptService
         private readonly RetryPolicy $retries,
         private readonly BlockTypeRegistry $registry,
         private readonly ManifestBlockLookup $blocks,
+        private readonly SubmissionReviewService $manualReviews,
     ) {
     }
 
@@ -313,7 +314,7 @@ class AttemptService
      */
     public function restorePayload(LessonAttempt $attempt, bool $readOnly): array
     {
-        $attempt->loadMissing(['blockStates', 'blockSubmissions', 'lessonVersion']);
+        $attempt->loadMissing(['blockStates', 'blockSubmissions.latestReview', 'lessonVersion']);
 
         $byBlock = $attempt->blockSubmissions
             ->filter(fn ($row) => is_array($row->grading_result))
@@ -351,6 +352,23 @@ class AttemptService
             ];
         }
 
+        // Manual-review feedback for short_response/cer — student-safe keys only.
+        // Derived from each block's latest submission; older reviews never move forward.
+        $reviews = [];
+
+        foreach ($attempt->blockSubmissions
+            ->whereIn('block_type', ['short_response', 'cer'])
+            ->where('requires_manual_review', true)
+            ->groupBy('block_id') as $blockId => $rows) {
+            $latest = $rows->sortByDesc(fn ($row) => [$row->attempt_number, $row->id])->first();
+
+            if ($latest === null) {
+                continue;
+            }
+
+            $reviews[(string) $blockId] = $this->manualReviews->studentSafeFromSubmission($latest);
+        }
+
         return [
             'id' => $attempt->id,
             'status' => $attempt->status->value,
@@ -365,6 +383,7 @@ class AttemptService
                 'revision' => $row->revision,
             ])->values()->all(),
             'submissions' => $submissions,
+            'reviews' => $reviews,
         ];
     }
 

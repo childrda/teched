@@ -22,6 +22,7 @@ export function cerActivity(config = {}) {
     strings: config.strings ?? {},
     values: Object.fromEntries(fields.map((field) => [field.id, ''])),
     readOnly: false,
+    review: null,
     disposeContributor: null,
 
     init() {
@@ -29,6 +30,7 @@ export function cerActivity(config = {}) {
 
       this.readOnly = player?.readOnly === true;
       this.restoreState(player?.stateFor?.(this.blockId));
+      this.review = player?.reviewFor?.(this.blockId) ?? null;
     },
 
     destroy() {
