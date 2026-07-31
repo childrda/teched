@@ -72,30 +72,41 @@ test('students cannot access the admin panel; teachers and admins can', function
         ->assertForbidden();
 });
 
-test('teachers are SQL-scoped to owned lessons and cannot reach others by id', function () {
+test('teachers are SQL-scoped to owned lessons plus published library; others drafts are unreachable', function () {
     $owner = asTeacher();
     $other = User::factory()->create();
     $other->forceFill(['role' => UserRole::Teacher])->save();
 
     $mine = ownedLesson($owner, ['title' => 'Mine']);
-    $theirs = ownedLesson($other, ['title' => 'Theirs']);
+    $theirDraft = ownedLesson($other, ['title' => 'Their draft']);
+    $theirPublished = ownedLesson($other, [
+        'title' => 'Their published',
+        'status' => LessonStatus::Published,
+        'current_version' => 1,
+    ]);
 
     Auth::login($owner);
     $ids = LessonResource::getEloquentQuery()->pluck('id')->all();
 
     expect($ids)->toContain($mine->id)
-        ->and($ids)->not->toContain($theirs->id);
+        ->and($ids)->not->toContain($theirDraft->id)
+        ->and($ids)->toContain($theirPublished->id);
 
     expect(Gate::forUser($owner)->allows('view', $mine))->toBeTrue()
-        ->and(Gate::forUser($owner)->allows('view', $theirs))->toBeFalse()
-        ->and(Gate::forUser($owner)->allows('update', $theirs))->toBeFalse()
-        ->and(Gate::forUser($owner)->allows('publish', $theirs))->toBeFalse()
-        ->and(Gate::forUser($owner)->allows('archive', $theirs))->toBeFalse()
-        ->and(Gate::forUser($owner)->allows('unarchive', $theirs))->toBeFalse();
+        ->and(Gate::forUser($owner)->allows('view', $theirDraft))->toBeFalse()
+        ->and(Gate::forUser($owner)->allows('view', $theirPublished))->toBeTrue()
+        ->and(Gate::forUser($owner)->allows('update', $theirPublished))->toBeFalse()
+        ->and(Gate::forUser($owner)->allows('publish', $theirPublished))->toBeFalse()
+        ->and(Gate::forUser($owner)->allows('archive', $theirPublished))->toBeFalse()
+        ->and(Gate::forUser($owner)->allows('unarchive', $theirPublished))->toBeFalse();
 
-    // SQL scoping yields 404 (record invisible); policy alone would be 403.
-    $this->get(LessonResource::getUrl('edit', ['record' => $theirs]))
+    // Draft owned by another teacher stays invisible (404). Published library
+    // lessons resolve in the query but edit is refused (403).
+    $this->get(LessonResource::getUrl('edit', ['record' => $theirDraft]))
         ->assertNotFound();
+
+    $this->get(LessonResource::getUrl('edit', ['record' => $theirPublished]))
+        ->assertForbidden();
 });
 
 test('admins can manage every lesson', function () {

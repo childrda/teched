@@ -12,6 +12,7 @@ use App\Models\LessonAssignmentVersionChange;
 use App\Models\SchoolClass;
 use App\Models\User;
 use App\Support\DatabaseErrors;
+use App\Support\DisplayTime;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -68,8 +69,8 @@ class LessonAssignmentService
                     'lesson_id' => $lesson->id,
                     'lesson_version_id' => $version->id,
                     'assigned_by_user_id' => $actor->id,
-                    'available_at' => $data['available_at'] ?? null,
-                    'due_at' => $data['due_at'] ?? null,
+                    'available_at' => DisplayTime::parseInput($data['available_at'] ?? null),
+                    'due_at' => DisplayTime::parseInput($data['due_at'] ?? null),
                     'settings' => null,
                     'archived_at' => null,
                 ])->fresh(['lesson', 'lessonVersion']);
@@ -103,11 +104,11 @@ class LessonAssignmentService
             }
 
             if (array_key_exists('available_at', $data)) {
-                $locked->available_at = $data['available_at'];
+                $locked->available_at = DisplayTime::parseInput($data['available_at']);
             }
 
             if (array_key_exists('due_at', $data)) {
-                $locked->due_at = $data['due_at'];
+                $locked->due_at = DisplayTime::parseInput($data['due_at']);
             }
 
             $locked->save();

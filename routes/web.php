@@ -38,6 +38,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/authoring/lessons/{lesson}/preview', \App\Http\Controllers\Authoring\LessonPreviewController::class)
         ->name('authoring.lessons.preview');
+    Route::get('/authoring/lessons/{lesson}/preview-published', \App\Http\Controllers\Authoring\PublishedLessonPreviewController::class)
+        ->name('authoring.lessons.preview-published');
 
     Route::get('/player/assignments/{assignment}', AssignmentPlayerController::class)
         ->name('player.assignments.show');

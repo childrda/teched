@@ -44,8 +44,8 @@
                     <td class="px-3 py-3">{{ $row['status_label'] }}</td>
                     <td class="px-3 py-3">{{ __('staff.attempt_count', ['count' => $row['attempt_count']]) }}</td>
                     <td class="px-3 py-3">{{ $row['current_page'] ?? '—' }}</td>
-                    <td class="px-3 py-3">{{ $row['started_at']?->toDayDateTimeString() ?? '—' }}</td>
-                    <td class="px-3 py-3">{{ $row['completed_at']?->toDayDateTimeString() ?? '—' }}</td>
+                    <td class="px-3 py-3">{{ \App\Support\DisplayTime::toDayDateTimeString($row['started_at'] ?? null) }}</td>
+                    <td class="px-3 py-3">{{ \App\Support\DisplayTime::toDayDateTimeString($row['completed_at'] ?? null) }}</td>
                     <td class="px-3 py-3">
                         <span class="sr-only">{{ __('staff.active_time') }}: </span>
                         {{ gmdate('H:i:s', (int) $row['active_seconds']) }}

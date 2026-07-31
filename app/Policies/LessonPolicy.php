@@ -15,7 +15,12 @@ class LessonPolicy
 
     public function view(User $user, Lesson $lesson): bool
     {
-        return $this->ownsOrAdmin($user, $lesson);
+        if ($this->ownsOrAdmin($user, $lesson)) {
+            return true;
+        }
+
+        // District library: any teacher may view another owner's published lesson.
+        return $user->isTeacher() && $this->isPublishedLibraryLesson($lesson);
     }
 
     public function create(User $user): bool
@@ -61,20 +66,52 @@ class LessonPolicy
         return $lesson->status === LessonStatus::Archived;
     }
 
-    public function preview(User $user, Lesson $lesson): bool
+    /**
+     * Preview the saved authoring draft (in-memory compile). Owner/admin only.
+     */
+    public function previewDraft(User $user, Lesson $lesson): bool
     {
         return $this->update($user, $lesson);
     }
 
+    /**
+     * Preview the current published LessonVersion. Any teacher or admin;
+     * lesson must be published (not archived) with a version.
+     */
+    public function previewPublished(User $user, Lesson $lesson): bool
+    {
+        if (! ($user->isTeacher() || $user->isAdmin())) {
+            return false;
+        }
+
+        return $this->isPublishedLibraryLesson($lesson);
+    }
+
+    /**
+     * @deprecated Use previewDraft — kept only for callers that still name preview.
+     */
+    public function preview(User $user, Lesson $lesson): bool
+    {
+        return $this->previewDraft($user, $lesson);
+    }
+
     public function duplicate(User $user, Lesson $lesson): bool
     {
-        return $this->view($user, $lesson) && $this->create($user);
+        // Duplicating another owner's library lesson is not allowed here —
+        // ownership of the source is required (library view alone is not enough).
+        return $this->ownsOrAdmin($user, $lesson) && $this->create($user);
     }
 
     /** Admins only — never the current owner acting alone. */
     public function reassignOwner(User $user, Lesson $lesson): bool
     {
         return $user->isAdmin();
+    }
+
+    private function isPublishedLibraryLesson(Lesson $lesson): bool
+    {
+        return $lesson->status === LessonStatus::Published
+            && (int) $lesson->current_version > 0;
     }
 
     private function ownsOrAdmin(User $user, Lesson $lesson): bool

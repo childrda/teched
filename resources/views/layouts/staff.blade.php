@@ -15,6 +15,11 @@
                 <x-app.logo size="sm" :link="true" />
                 <div class="flex flex-wrap items-center gap-4">
                     @yield('nav')
+                    @auth
+                        @if (auth()->user()->isTeacher() || auth()->user()->isAdmin())
+                            <a href="{{ url('/admin') }}" class="underline">{{ __('staff.authoring_panel') }}</a>
+                        @endif
+                    @endauth
                     <a href="{{ route('home') }}" class="underline">{{ __('staff.back_home') }}</a>
                     <x-auth.session />
                 </div>

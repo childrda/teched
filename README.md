@@ -203,10 +203,16 @@ Sign in at `/login`, then open `/lessons/WEL-6.1.1`. The JSON manifest at
 Session lifetime defaults to 60 minutes (see `SESSION_LIFETIME` in
 `.env.example`) for shared Chromebook carts. `SESSION_EXPIRE_ON_CLOSE` stays
 false so a closed lid does not force a re-login before Phase 3 resume exists.
+`.env.example` uses `SESSION_DRIVER=database` and `SESSION_COOKIE=teched_session`
+so a fresh copy works without Redis and does not collide with other Laravel
+apps on `localhost`.
 
-Note: `.env.example` documents the production drivers (Redis for
-queue/cache/session, S3 for files). For local development without Redis,
-use `database` for those drivers and `local` for the filesystem.
+Timestamps are stored in UTC (`APP_TIMEZONE=UTC`) and shown in Eastern
+(`APP_DISPLAY_TIMEZONE=America/New_York`). Do not set the app timezone to
+Eastern — that would persist local wall-clock times.
+
+After changing environment values on a deployed box, run
+`php artisan config:cache` so the new values take effect.
 
 ## Running tests
 

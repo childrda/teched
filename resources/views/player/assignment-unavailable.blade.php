@@ -13,7 +13,7 @@
         <p class="mt-4 text-slate-700">{{ __('player.assignment_unavailable_body') }}</p>
         @if ($assignment->available_at)
             <p class="mt-2 text-sm text-slate-600">
-                {{ __('player.assignment_available_at', ['when' => $assignment->available_at->timezone(config('app.timezone'))->toDayDateTimeString()]) }}
+                {{ __('player.assignment_available_at', ['when' => \App\Support\DisplayTime::toDayDateTimeString($assignment->available_at)]) }}
             </p>
         @endif
         <p class="mt-8"><a href="{{ route('home') }}" class="underline">{{ __('player.back_home') }}</a></p>

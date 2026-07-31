@@ -7,6 +7,7 @@ use App\Models\Lesson;
 use App\Models\LessonAssignment;
 use App\Models\SchoolClass;
 use App\Services\LessonAssignmentService;
+use App\Support\DisplayTime;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -39,8 +40,12 @@ class AssignmentsRelationManager extends RelationManager
                 TextColumn::make('lesson.code')->label('Code')->searchable(),
                 TextColumn::make('lesson.title')->label('Lesson')->searchable(),
                 TextColumn::make('lessonVersion.version')->label('Pinned v'),
-                TextColumn::make('available_at')->dateTime()->placeholder('Immediately'),
-                TextColumn::make('due_at')->dateTime()->placeholder('—'),
+                TextColumn::make('available_at')
+                    ->formatStateUsing(fn ($state) => DisplayTime::toDayDateTimeString($state))
+                    ->placeholder('Immediately'),
+                TextColumn::make('due_at')
+                    ->formatStateUsing(fn ($state) => DisplayTime::toDayDateTimeString($state))
+                    ->placeholder('—'),
                 TextColumn::make('archived_at')
                     ->label('Status')
                     ->formatStateUsing(fn ($state, LessonAssignment $record) => $record->isArchived() ? 'Archived' : 'Active')

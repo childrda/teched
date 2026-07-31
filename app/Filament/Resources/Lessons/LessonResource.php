@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Lessons;
 
+use App\Enums\LessonStatus;
 use App\Filament\Resources\Lessons\Pages\CreateLesson;
 use App\Filament\Resources\Lessons\Pages\EditLesson;
 use App\Filament\Resources\Lessons\Pages\ListLessons;
@@ -67,8 +68,15 @@ class LessonResource extends Resource
             return $query;
         }
 
-        // Teachers: SQL-scoped to owned lessons (not PHP filtering).
-        return $query->where('created_by_user_id', $user->getKey());
+        // Teachers: own lessons of any status, plus other owners' published
+        // lessons (district library). Archived lessons owned by others stay out.
+        return $query->where(function (Builder $q) use ($user) {
+            $q->where('created_by_user_id', $user->getKey())
+                ->orWhere(function (Builder $library) {
+                    $library->where('status', LessonStatus::Published->value)
+                        ->where('current_version', '>=', 1);
+                });
+        });
     }
 
     public static function canViewAny(): bool

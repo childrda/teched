@@ -45,16 +45,16 @@
             </div>
             <div>
                 <dt class="text-sm font-semibold">{{ __('staff.started_at') }}</dt>
-                <dd>{{ $detail['started_at']?->toDayDateTimeString() ?? '—' }}</dd>
+                <dd>{{ \App\Support\DisplayTime::toDayDateTimeString($detail['started_at']) }}</dd>
             </div>
             <div>
                 <dt class="text-sm font-semibold">{{ __('staff.completed_at') }}</dt>
-                <dd>{{ $detail['completed_at']?->toDayDateTimeString() ?? '—' }}</dd>
+                <dd>{{ \App\Support\DisplayTime::toDayDateTimeString($detail['completed_at']) }}</dd>
             </div>
             @if ($detail['superseded_at'])
                 <div>
                     <dt class="text-sm font-semibold">{{ __('staff.superseded_at') }}</dt>
-                    <dd>{{ $detail['superseded_at']->toDayDateTimeString() }}
+                    <dd>{{ \App\Support\DisplayTime::toDayDateTimeString($detail['superseded_at']) }}
                         @if ($detail['superseded_by'])
                             ({{ $detail['superseded_by'] }})
                         @endif
@@ -117,7 +117,7 @@
                     <p class="mt-2 text-sm text-slate-600">{{ __('staff.current_work_empty') }}</p>
                 @else
                     <p class="mt-2 text-sm">
-                        {{ __('staff.current_work_updated', ['when' => $block['current_work']['updated_at']?->toDayDateTimeString() ?? '—']) }}
+                        {{ __('staff.current_work_updated', ['when' => \App\Support\DisplayTime::toDayDateTimeString($block['current_work']['updated_at'] ?? null)]) }}
                     </p>
                     @if ($block['current_work']['differs_from_latest_submission'])
                         <p class="mt-1 text-sm font-semibold">{{ __('staff.draft_differs') }}</p>
@@ -142,7 +142,7 @@
                             ])>
                                 <p class="font-semibold">
                                     {{ __('staff.submission_number', ['number' => $submission['attempt_number']]) }}
-                                    — {{ __('staff.submitted_at', ['when' => $submission['submitted_at']?->toDayDateTimeString() ?? '—']) }}
+                                    — {{ __('staff.submitted_at', ['when' => \App\Support\DisplayTime::toDayDateTimeString($submission['submitted_at'] ?? null)]) }}
                                     @if ($submission['needs_review'] ?? false)
                                         — {{ __('staff.awaiting_review') }}
                                     @elseif ($submission['requires_manual_review'] && ($submission['latest_review']['reviewed'] ?? false))
@@ -220,7 +220,7 @@
                     <li class="border border-slate-300 p-3 text-sm">
                         {{ $grant['block_id'] }} — +{{ $grant['additional_attempts'] }}
                         — {{ __('staff.grant_by', ['name' => $grant['granted_by'] ?? '—']) }}
-                        — {{ $grant['created_at']?->toDayDateTimeString() }}
+                        — {{ \App\Support\DisplayTime::toDayDateTimeString($grant['created_at'] ?? null) }}
                         @if ($grant['reason'])
                             — {{ $grant['reason'] }}
                         @endif
@@ -237,8 +237,8 @@
                 @foreach ($detail['reopens'] as $reopen)
                     <li class="border border-slate-300 p-3 text-sm">
                         {{ __('staff.reopened_by', ['name' => $reopen['reopened_by'] ?? '—']) }}
-                        — {{ $reopen['created_at']?->toDayDateTimeString() }}
-                        — {{ __('staff.previous_completed_at', ['when' => $reopen['previous_completed_at']?->toDayDateTimeString() ?? '—']) }}
+                        — {{ \App\Support\DisplayTime::toDayDateTimeString($reopen['created_at'] ?? null) }}
+                        — {{ __('staff.previous_completed_at', ['when' => \App\Support\DisplayTime::toDayDateTimeString($reopen['previous_completed_at'] ?? null)]) }}
                         @if ($reopen['reason'])
                             — {{ $reopen['reason'] }}
                         @endif

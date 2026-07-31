@@ -51,6 +51,7 @@ return [
     'back_assignments' => 'Class assignments',
     'back_assignment' => 'Assignment roster',
     'back_home' => 'Home',
+    'authoring_panel' => 'Authoring (admin)',
     'pinned_version' => 'Pinned version :number',
     'current_work' => 'Current work (draft)',
     'current_work_empty' => 'No saved draft for this block.',

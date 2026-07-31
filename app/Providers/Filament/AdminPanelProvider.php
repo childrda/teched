@@ -6,12 +6,15 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationItem;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -44,6 +47,13 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 AccountWidget::class,
+            ])
+            ->navigationItems([
+                NavigationItem::make('Class progress')
+                    ->url(fn (): string => route('staff.classes.index'), shouldOpenInNewTab: false)
+                    ->icon(Heroicon::OutlinedAcademicCap)
+                    ->sort(50)
+                    ->visible(fn (): bool => Auth::user()?->isTeacher() || Auth::user()?->isAdmin()),
             ])
             ->middleware([
                 EncryptCookies::class,

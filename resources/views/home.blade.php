@@ -23,6 +23,9 @@
 
         @if ($isStaff)
             <p class="mb-6 flex flex-wrap gap-4">
+                <a href="{{ url('/admin') }}" class="font-medium text-slate-900 underline">
+                    {{ __('staff.authoring_panel') }}
+                </a>
                 <a href="{{ route('staff.classes.index') }}" class="font-medium text-slate-900 underline">
                     {{ __('home.view_classes') }}
                 </a>
@@ -85,13 +88,13 @@
                                     @endif
                                     @if (! $row['available'] && $row['available_at'])
                                         <span class="mt-1 block text-sm font-normal">
-                                            {{ __('home.available_at', ['when' => $row['available_at']->toDayDateTimeString()]) }}
+                                            {{ __('home.available_at', ['when' => \App\Support\DisplayTime::toDayDateTimeString($row['available_at'])]) }}
                                         </span>
                                     @endif
                                 </th>
                                 <td class="px-3 py-3">{{ $row['status_label'] }}</td>
                                 <td class="px-3 py-3">
-                                    {{ $row['due_at'] ? __('home.due_at', ['when' => $row['due_at']->toDayDateTimeString()]) : '—' }}
+                                    {{ $row['due_at'] ? __('home.due_at', ['when' => \App\Support\DisplayTime::toDayDateTimeString($row['due_at'])]) : '—' }}
                                 </td>
                                 <td class="px-3 py-3">
                                     @if ($row['url'] && $row['action_label'])

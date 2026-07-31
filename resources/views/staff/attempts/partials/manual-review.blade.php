@@ -13,7 +13,7 @@
                     — {{ __('staff.reviewed_by', ['name' => $latest['reviewed_by']]) }}
                 @endif
                 @if ($latest['created_at'])
-                    — {{ $latest['created_at']->toDayDateTimeString() }}
+                    — {{ \App\Support\DisplayTime::toDayDateTimeString($latest['created_at']) }}
                 @endif
             </p>
             @if (is_array($latest['score'] ?? null))
@@ -113,7 +113,7 @@
             <ul class="mt-2 space-y-2">
                 @foreach (array_slice($history, 1) as $prior)
                     <li class="border border-slate-200 p-2">
-                        {{ $prior['created_at']?->toDayDateTimeString() ?? '—' }}
+                        {{ \App\Support\DisplayTime::toDayDateTimeString($prior['created_at'] ?? null) }}
                         — {{ $prior['reviewed_by'] ?? '—' }}
                         @if (is_array($prior['score'] ?? null))
                             — {{ $prior['score']['awarded'] }}/{{ $prior['score']['possible'] }}

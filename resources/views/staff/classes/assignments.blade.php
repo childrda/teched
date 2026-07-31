@@ -31,7 +31,7 @@
                             <span class="block text-sm font-normal text-slate-600">{{ $assignment->lesson->code }}</span>
                         </th>
                         <td class="px-3 py-3">
-                            {{ $assignment->due_at ? __('staff.due_at', ['when' => $assignment->due_at->toDayDateTimeString()]) : '—' }}
+                            {{ $assignment->due_at ? __('staff.due_at', ['when' => \App\Support\DisplayTime::toDayDateTimeString($assignment->due_at)]) : '—' }}
                         </td>
                         <td class="px-3 py-3">{{ $assignment->lessonVersion?->version }}</td>
                     </tr>

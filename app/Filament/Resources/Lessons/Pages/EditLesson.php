@@ -69,11 +69,18 @@ class EditLesson extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('preview')
-                ->label('Preview as Student')
+            Action::make('previewDraft')
+                ->label('Preview saved draft')
                 ->url(fn (): string => route('authoring.lessons.preview', $this->getRecord()))
                 ->openUrlInNewTab()
-                ->visible(fn (): bool => Gate::allows('preview', $this->getRecord())),
+                ->visible(fn (): bool => Gate::allows('previewDraft', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('previewDraft', $this->getRecord())),
+            Action::make('previewPublished')
+                ->label('Preview published version')
+                ->url(fn (): string => route('authoring.lessons.preview-published', $this->getRecord()))
+                ->openUrlInNewTab()
+                ->visible(fn (): bool => Gate::allows('previewPublished', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('previewPublished', $this->getRecord())),
             Action::make('publish')
                 ->label('Publish')
                 ->color('success')
@@ -91,7 +98,10 @@ class EditLesson extends EditRecord
                         .'Every successful publish creates a new version, even when the manifest is unchanged.';
                 })
                 ->visible(fn (): bool => Gate::allows('publish', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('publish', $this->getRecord()))
                 ->action(function (): void {
+                    abort_unless(Gate::allows('publish', $this->getRecord()), 403);
+
                     $this->save(shouldRedirect: false);
 
                     /** @var Lesson $lesson */
@@ -118,7 +128,10 @@ class EditLesson extends EditRecord
                 ->label('Duplicate lesson')
                 ->requiresConfirmation()
                 ->visible(fn (): bool => Gate::allows('duplicate', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('duplicate', $this->getRecord()))
                 ->action(function (): void {
+                    abort_unless(Gate::allows('duplicate', $this->getRecord()), 403);
+
                     try {
                         $copy = app(LessonContentDuplicator::class)
                             ->duplicateLesson($this->getRecord(), Auth::user());
@@ -139,6 +152,7 @@ class EditLesson extends EditRecord
             Action::make('reassignOwner')
                 ->label('Reassign owner')
                 ->visible(fn (): bool => Gate::allows('reassignOwner', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('reassignOwner', $this->getRecord()))
                 ->form([
                     Select::make('new_owner_user_id')
                         ->label('New owner')
@@ -152,6 +166,8 @@ class EditLesson extends EditRecord
                         ->searchable(),
                 ])
                 ->action(function (array $data): void {
+                    abort_unless(Gate::allows('reassignOwner', $this->getRecord()), 403);
+
                     $newOwner = User::query()->findOrFail($data['new_owner_user_id']);
                     app(LessonAuthoringService::class)->reassignOwner(
                         $this->getRecord(),
@@ -168,7 +184,9 @@ class EditLesson extends EditRecord
                 ->modalHeading('Archive lesson')
                 ->modalDescription('New student access is blocked. Versions, assignments, and attempts are preserved. The lesson remains editable; unarchive before publishing again.')
                 ->visible(fn (): bool => Gate::allows('archive', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('archive', $this->getRecord()))
                 ->action(function (): void {
+                    abort_unless(Gate::allows('archive', $this->getRecord()), 403);
                     app(LessonAuthoringService::class)->archive($this->getRecord(), Auth::user());
                     Notification::make()->title('Lesson archived')->success()->send();
                     $this->refreshFormData(['status', 'updated_at']);
@@ -178,14 +196,22 @@ class EditLesson extends EditRecord
                 ->label('Unarchive')
                 ->requiresConfirmation()
                 ->visible(fn (): bool => Gate::allows('unarchive', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('unarchive', $this->getRecord()))
                 ->action(function (): void {
+                    abort_unless(Gate::allows('unarchive', $this->getRecord()), 403);
                     app(LessonAuthoringService::class)->unarchive($this->getRecord(), Auth::user());
                     Notification::make()->title('Lesson unarchived')->success()->send();
                     $this->refreshFormData(['status', 'updated_at']);
                     $this->fillForm();
                 }),
             DeleteAction::make()
-                ->visible(fn (): bool => Gate::allows('delete', $this->getRecord())),
+                ->visible(fn (): bool => Gate::allows('delete', $this->getRecord()))
+                ->authorize(fn (): bool => Gate::allows('delete', $this->getRecord())),
         ];
+    }
+
+    protected function authorizeAccess(): void
+    {
+        abort_unless(Gate::allows('update', $this->getRecord()), 403);
     }
 }

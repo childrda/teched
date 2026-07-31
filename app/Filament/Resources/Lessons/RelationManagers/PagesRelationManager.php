@@ -96,6 +96,7 @@ class PagesRelationManager extends RelationManager
                     ->action(function (): void {
                         /** @var Lesson $lesson */
                         $lesson = $this->getOwnerRecord();
+                        abort_unless(Gate::allows('update', $lesson), 403);
 
                         try {
                             $page = app(LessonAuthoringService::class)->createPage(
@@ -170,6 +171,7 @@ class PagesRelationManager extends RelationManager
                     ->action(function (LessonPage $record): void {
                         /** @var Lesson $lesson */
                         $lesson = $this->getOwnerRecord();
+                        abort_unless(Gate::allows('update', $lesson), 403);
 
                         try {
                             $copy = app(LessonAuthoringService::class)->duplicatePage(
@@ -194,6 +196,7 @@ class PagesRelationManager extends RelationManager
                     ->action(function (LessonPage $record): void {
                         /** @var Lesson $lesson */
                         $lesson = $this->getOwnerRecord();
+                        abort_unless(Gate::allows('update', $lesson), 403);
 
                         try {
                             app(LessonAuthoringService::class)->deletePage(

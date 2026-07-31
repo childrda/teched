@@ -65,7 +65,21 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Storage timezone — always UTC. Do not set this to America/New_York;
+    // Eloquent would then persist local wall-clock times and break DST / Classroom.
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Display Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Teacher- and student-facing timestamps render in this zone. Filament
+    | date pickers also use it via FilamentTimezone. Storage remains UTC.
+    |
+    */
+
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'America/New_York'),
 
     /*
     |--------------------------------------------------------------------------

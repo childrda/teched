@@ -11,6 +11,7 @@ use App\Policies\LessonAssignmentPolicy;
 use App\Policies\LessonAttemptPolicy;
 use App\Policies\LessonPolicy;
 use App\Policies\SchoolClassPolicy;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -46,6 +47,10 @@ class AppServiceProvider extends ServiceProvider
                 'max:'.(int) config('lesson-assets.document_max_kb'),
             ],
         ]);
+
+        // Filament date pickers interpret / display in Eastern; app timezone
+        // (storage) stays UTC via config/app.php.
+        FilamentTimezone::set((string) config('app.display_timezone', 'America/New_York'));
 
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by(SessionController::throttleKey($request));

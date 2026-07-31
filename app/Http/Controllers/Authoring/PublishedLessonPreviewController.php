@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\LessonAttempt;
 use App\Models\LessonVersion;
-use App\Services\LessonCompiler;
 use App\Services\StudentManifest;
 use App\Support\PlayerCapabilities;
 use Illuminate\Contracts\View\View;
@@ -14,30 +13,29 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * Preview saved draft as Student: real player against an in-memory compile.
- * Never creates a LessonVersion or LessonAttempt. Owner/admin only.
+ * Preview the current published LessonVersion. Any teacher/admin.
+ * Uses the immutable version — does not compile the draft. No attempt,
+ * no grading token, no persistence.
  */
-class LessonPreviewController extends Controller
+class PublishedLessonPreviewController extends Controller
 {
-    public function __construct(
-        private readonly LessonCompiler $compiler,
-        private readonly StudentManifest $studentManifest,
-    ) {
-    }
+    public function __construct(private readonly StudentManifest $studentManifest) {}
 
     public function __invoke(Lesson $lesson): View|Response
     {
-        Gate::authorize('previewDraft', $lesson);
+        Gate::authorize('previewPublished', $lesson);
+
+        $version = $lesson->currentVersion();
+        abort_if($version === null, 404);
 
         $versionsBefore = LessonVersion::query()->where('lesson_id', $lesson->getKey())->count();
         $attemptsBefore = LessonAttempt::query()->where('lesson_id', $lesson->getKey())->count();
 
-        $compiled = $this->compiler->compileManifest(
-            $lesson,
-            max(1, (int) $lesson->current_version),
+        // Redact the stored published manifest — never compile draft rows and
+        // never issue a grading_token (grading requires a real student attempt).
+        $manifest = $this->studentManifest->redactCompiledManifest(
+            is_array($version->manifest) ? $version->manifest : []
         );
-        $manifest = $this->studentManifest->redactCompiledManifest($compiled);
-        // No grading_token — preview must never invent one.
 
         $attempt = [
             'id' => null,
@@ -46,7 +44,7 @@ class LessonPreviewController extends Controller
             'current_page_id' => $manifest['pages'][0]['page_id'] ?? null,
             'active_seconds' => 0,
             'revision' => 0,
-            'shuffle_seed' => 'preview',
+            'shuffle_seed' => 'preview-published',
             'block_states' => [],
             'submissions' => [],
             'reviews' => [],
@@ -62,7 +60,9 @@ class LessonPreviewController extends Controller
             'attempt' => $attempt,
             'capabilities' => $capabilities,
             'preview' => true,
-            'previewBanner' => 'Previewing your last saved draft. Grading, persistence, and completion-gate enforcement are not being tested.',
+            'previewBanner' => 'Previewing published version '.$version->version
+                .'. This is the live student content — not your unpublished draft. '
+                .'Grading and persistence are disabled.',
         ]);
 
         $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -70,7 +70,7 @@ class LessonPreviewController extends Controller
 
         if (LessonVersion::query()->where('lesson_id', $lesson->getKey())->count() !== $versionsBefore
             || LessonAttempt::query()->where('lesson_id', $lesson->getKey())->count() !== $attemptsBefore) {
-            abort(500, 'Preview must not create versions or attempts.');
+            abort(500, 'Published preview must not create versions or attempts.');
         }
 
         return $response;
