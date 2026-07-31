@@ -68,6 +68,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                \App\Http\Middleware\EnsureActiveUser::class,
             ])
             ->renderHook(
                 PanelsRenderHook::SCRIPTS_AFTER,

@@ -171,6 +171,17 @@ php artisan db:seed        # users + WEL-6.1.1 "What Is Welding?"
 npm run build              # or: npm run dev
 ```
 
+Production (and any box where `UserSeeder` refuses) creates the first staff
+account with:
+
+```bash
+php artisan teched:create-staff-user
+```
+
+Prefer the interactive password prompt (`secret()`). `--force` only allows
+non-interactive runs; it never overwrites an existing email. Blank password
+creates a Google-provisioned account awaiting first Workspace sign-in.
+
 ### Deployment notes (lesson asset uploads)
 
 Teacher uploads land on the Laravel `public` disk (`storage/app/public`) and

@@ -182,6 +182,7 @@ class MembershipsRelationManager extends RelationManager
 
                 return User::query()
                     ->whereIn('role', $roles)
+                    ->whereNull('deactivated_at')
                     ->where(function (Builder $query) use ($search) {
                         $query->where('name', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%");
@@ -197,7 +198,7 @@ class MembershipsRelationManager extends RelationManager
 
                 return $user ? "{$user->name} ({$user->email})" : null;
             })
-            ->helperText('Type at least 2 characters to search by name or email.');
+            ->helperText('Type at least 2 characters to search by name or email. Deactivated accounts are omitted.');
     }
 
     private function runMembershipMutation(callable $callback): void

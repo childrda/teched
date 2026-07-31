@@ -36,7 +36,20 @@ class SessionController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        // Normalize email the same way provisioning stores it, so local login
+        // and Google linking share one identity key. Failure messages stay
+        // generic — never reveal "awaiting Google" on the public form.
+        $credentials['email'] = Str::lower(trim((string) $credentials['email']));
+
         if (! Auth::attempt($credentials, remember: false)) {
+            throw ValidationException::withMessages([
+                'email' => __('auth.failed'),
+            ]);
+        }
+
+        if (Auth::user()?->deactivated_at !== null) {
+            Auth::logout();
+
             throw ValidationException::withMessages([
                 'email' => __('auth.failed'),
             ]);

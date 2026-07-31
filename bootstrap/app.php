@@ -21,6 +21,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'staff' => \App\Http\Middleware\EnsureStaff::class,
+            'active' => \App\Http\Middleware\EnsureActiveUser::class,
+        ]);
+
+        // Reject deactivated accounts on every authenticated web request
+        // (stale sessions after deactivation). Filament panel registers the
+        // same middleware in AdminPanelProvider.
+        $middleware->appendToGroup('web', [
+            \App\Http\Middleware\EnsureActiveUser::class,
         ]);
 
         // Preserve student-typed whitespace in autosave state payloads.
@@ -40,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Cookie\Middleware\EncryptCookies::class,
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\Session\Middleware\StartSession::class,
+            \App\Http\Middleware\EnsureActiveUser::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

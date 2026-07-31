@@ -128,10 +128,13 @@ class ClassMembershipService
 
     private function assertNotLastActiveTeacher(ClassMembership $membership): void
     {
+        // Count only teachers who can still sign in — a deactivated user's
+        // membership must not satisfy the "at least one teacher" rule.
         $activeTeachers = ClassMembership::query()
             ->where('school_class_id', $membership->school_class_id)
             ->where('role', ClassRole::Teacher->value)
             ->whereNull('withdrawn_at')
+            ->whereHas('user', fn ($q) => $q->whereNull('deactivated_at'))
             ->count();
 
         if ($activeTeachers <= 1) {

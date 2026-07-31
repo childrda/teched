@@ -28,23 +28,26 @@ test('google_id enforces uniqueness', function () {
         ->toThrow(QueryException::class);
 });
 
-test('mass assignment cannot set role or google_id on create or update', function () {
+test('mass assignment cannot set role, google_id, or deactivated_at on create or update', function () {
     $created = User::query()->create([
         'name' => 'Mass Create',
         'email' => 'mass-create@teched.test',
         'password' => Hash::make('password'),
         'role' => 'admin',
         'google_id' => 'should-not-stick',
+        'deactivated_at' => now(),
     ]);
 
     $created->refresh();
 
     expect($created->role)->toBe(UserRole::Student)
-        ->and($created->google_id)->toBeNull();
+        ->and($created->google_id)->toBeNull()
+        ->and($created->deactivated_at)->toBeNull();
 
     $created->update([
         'role' => 'admin',
         'google_id' => 'still-should-not-stick',
+        'deactivated_at' => now(),
         'name' => 'Mass Updated',
     ]);
 
@@ -52,7 +55,8 @@ test('mass assignment cannot set role or google_id on create or update', functio
 
     expect($created->name)->toBe('Mass Updated')
         ->and($created->role)->toBe(UserRole::Student)
-        ->and($created->google_id)->toBeNull();
+        ->and($created->google_id)->toBeNull()
+        ->and($created->deactivated_at)->toBeNull();
 });
 
 test('creating a user without assigning role stores student via the column default', function () {

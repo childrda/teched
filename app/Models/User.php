@@ -17,10 +17,10 @@ class User extends Authenticatable implements FilamentUser
     use HasFactory, Notifiable;
 
     /**
-     * Mass-assignable attributes. role and google_id are deliberately
-     * absent: privilege and identity-binding fields are set explicitly
-     * (forceFill / direct assignment) so a future endpoint cannot escalate
-     * an account through request data.
+     * Mass-assignable attributes. role, google_id, and deactivated_at are
+     * deliberately absent: privilege and identity-binding fields are set
+     * explicitly via UserAccountService (forceFill) so a form cannot escalate
+     * or revive an account through request data.
      *
      * @var list<string>
      */
@@ -42,6 +42,7 @@ class User extends Authenticatable implements FilamentUser
     {
         return [
             'email_verified_at' => 'datetime',
+            'deactivated_at' => 'datetime',
             'password' => 'hashed',
             'role' => UserRole::class,
         ];
@@ -62,13 +63,27 @@ class User extends Authenticatable implements FilamentUser
         return $this->role === UserRole::Admin;
     }
 
+    public function isDeactivated(): bool
+    {
+        return $this->deactivated_at !== null;
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
+        if ($this->isDeactivated()) {
+            return false;
+        }
+
         return $this->isTeacher() || $this->isAdmin();
     }
 
     public function lessonAttempts(): HasMany
     {
         return $this->hasMany(LessonAttempt::class);
+    }
+
+    public function accountChanges(): HasMany
+    {
+        return $this->hasMany(UserAccountChange::class);
     }
 }
