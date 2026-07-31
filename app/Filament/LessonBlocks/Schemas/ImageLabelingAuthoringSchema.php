@@ -3,6 +3,7 @@
 namespace App\Filament\LessonBlocks\Schemas;
 
 use App\Filament\LessonBlocks\Concerns\HasGradingFields;
+use App\Filament\LessonBlocks\Concerns\HasLessonAssetUpload;
 use App\Filament\LessonBlocks\Contracts\BlockAuthoringSchema;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -16,6 +17,7 @@ use Illuminate\Support\Str;
 class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
 {
     use HasGradingFields;
+    use HasLessonAssetUpload;
 
     public function type(): string
     {
@@ -24,8 +26,12 @@ class ImageLabelingAuthoringSchema implements BlockAuthoringSchema
 
     public function filamentSchema(): array
     {
+        $imageFields = $this->imageAssetFields('image_url', 'Image URL / path');
+        // Hotspot map watches image_url live; keep that reactivity on the path field.
+        $imageFields[0] = $imageFields[0]->live();
+
         return [
-            TextInput::make('image_url')->label('Image URL / path')->required()->live(),
+            ...$imageFields,
             TextInput::make('image_alt')->label('Alt text')->required(),
             Textarea::make('long_description')->columnSpanFull(),
             Textarea::make('instructions')->columnSpanFull(),

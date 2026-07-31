@@ -158,6 +158,7 @@ composer install
 npm install
 cp .env.example .env
 php artisan key:generate
+php artisan storage:link   # required for teacher-uploaded lesson assets
 ```
 
 Create two databases (dev + test), e.g. `teched` and `teched_test`, then set
@@ -169,6 +170,23 @@ php artisan migrate
 php artisan db:seed        # users + WEL-6.1.1 "What Is Welding?"
 npm run build              # or: npm run dev
 ```
+
+### Deployment notes (lesson asset uploads)
+
+Teacher uploads land on the Laravel `public` disk (`storage/app/public`) and
+are served at `/storage/...` via the `storage:link` symlink. Without that
+link, authoring looks fine but every uploaded asset 404s for students.
+
+Seeded fixtures under `public/lessons/` (for example the WEL diagram) stay in
+the repo; uploads are user data under `storage/app/public/lessons/{lesson uuid}/`
+and are never committed.
+
+Caps live in `config/lesson-assets.php` (defaults: images 5 MB, documents
+20 MB). PHP `upload_max_filesize` and `post_max_size`, any reverse-proxy body
+limit, and Livewire's temporary upload max (raised in `AppServiceProvider` to
+match the document cap) must all be **at or above** the document cap —
+otherwise the framework rejects the file before the app can return a clear
+validation message.
 
 Seeded development accounts (password for all: `password`):
 

@@ -37,6 +37,16 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(LessonAttempt::class, LessonAttemptPolicy::class);
         Gate::policy(Lesson::class, LessonPolicy::class);
 
+        // Livewire temp uploads must clear the document cap or oversized files
+        // are rejected before LessonAssetService can explain why.
+        config([
+            'livewire.temporary_file_upload.rules' => [
+                'required',
+                'file',
+                'max:'.(int) config('lesson-assets.document_max_kb'),
+            ],
+        ]);
+
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by(SessionController::throttleKey($request));
         });

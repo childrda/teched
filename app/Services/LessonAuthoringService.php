@@ -14,6 +14,7 @@ use App\Models\LessonBlock;
 use App\Models\LessonOwnerChange;
 use App\Models\LessonPage;
 use App\Models\User;
+use App\Rules\LessonScopedAssetUrl;
 use App\Services\Authoring\AuthoringErrorFormatter;
 use App\Services\Authoring\DraftConfigValidator;
 use App\Services\Authoring\NestedIdReconciler;
@@ -214,6 +215,8 @@ class LessonAuthoringService
             $locked = LessonPage::query()->lockForUpdate()->findOrFail($page->getKey());
             $this->assertPageRevision($locked, $data['updated_at'] ?? null);
 
+            $locked->loadMissing('lesson');
+
             $normalized = $this->normalizeIncomingGraph([[
                 'page_id' => $locked->page_id,
                 'title' => $data['title'] ?? $locked->title,
@@ -225,7 +228,7 @@ class LessonAuthoringService
                     ? $data['settings']
                     : ($locked->settings ?? []),
                 'blocks' => $data['blocks'] ?? [],
-            ]]);
+            ]], $locked->lesson);
 
             if ($normalized['errors'] !== []) {
                 throw AuthoringValidationException::with($normalized['errors'], $normalized['warnings']);
@@ -256,6 +259,9 @@ class LessonAuthoringService
     /**
      * Delete an authoring page row (and its blocks via FK cascade). Published
      * manifests and pinned attempts are untouched.
+     *
+     * Does not delete files on disk — LessonVersion manifests may still name
+     * those paths. Orphan cleanup is a later admin dry-run feature.
      *
      * Concurrency token: lessons.updated_at — deleting a page changes the
      * page graph.
@@ -398,6 +404,8 @@ class LessonAuthoringService
 
     public function archive(Lesson $lesson, User $user): Lesson
     {
+        // Archive is a status change only — never delete lesson asset files.
+        // Published manifests continue to reference /storage/lessons/{uuid}/...
         $lesson->forceFill([
             'status' => LessonStatus::Archived,
             'updated_by' => $user->getKey(),
@@ -634,7 +642,7 @@ class LessonAuthoringService
      */
     private function syncGraph(Lesson $lesson, array $pagesData, User $user): array
     {
-        $normalized = $this->normalizeIncomingGraph($pagesData);
+        $normalized = $this->normalizeIncomingGraph($pagesData, $lesson);
 
         if ($normalized['errors'] !== []) {
             throw AuthoringValidationException::with($normalized['errors'], $normalized['warnings']);
@@ -696,7 +704,7 @@ class LessonAuthoringService
      * @param  list<array<string, mixed>>  $pagesData
      * @return array{pages: list<array<string, mixed>>, errors: list<string>, warnings: list<string>}
      */
-    private function normalizeIncomingGraph(array $pagesData): array
+    private function normalizeIncomingGraph(array $pagesData, ?Lesson $lesson = null): array
     {
         $errors = [];
         $warnings = [];
@@ -734,12 +742,22 @@ class LessonAuthoringService
                 $grading = is_array($data['grading'] ?? null) ? $data['grading'] : null;
                 unset($data['block_id'], $data['grading']);
 
+                // Upload controls are non-dehydrated; strip if a client forges them
+                // into block config so they never become unknown-key draft noise.
+                unset($data['url_upload'], $data['image_url_upload']);
+
                 $draft = $this->draftValidator->validate($typeKey, $data, $grading);
                 foreach ($draft['errors'] as $error) {
                     $errors[] = "{$title} / {$typeKey} #".($blockIndex + 1)." / {$error}";
                 }
                 foreach ($draft['warnings'] as $warning) {
                     $warnings[] = "{$title} / {$typeKey} #".($blockIndex + 1)." / {$warning}";
+                }
+
+                if ($lesson !== null && $draft['errors'] === []) {
+                    foreach ($this->assertLessonScopedAssetPaths($lesson, $typeKey, $data) as $pathError) {
+                        $errors[] = "{$title} / {$typeKey} #".($blockIndex + 1)." / {$pathError}";
+                    }
                 }
 
                 $blocks[] = [
@@ -837,6 +855,38 @@ class LessonAuthoringService
         }
 
         return [false, (new SchemaErrorFormatter)->format($error)];
+    }
+
+    /**
+     * Hard-fail cross-lesson /storage paths on authoring save so the manual
+     * path field cannot defeat LessonAssetService confinement.
+     *
+     * @return list<string>
+     */
+    private function assertLessonScopedAssetPaths(Lesson $lesson, string $typeKey, array $config): array
+    {
+        $field = match ($typeKey) {
+            'image', 'file_link' => 'url',
+            'image_labeling' => 'image_url',
+            default => null,
+        };
+
+        if ($field === null || ! array_key_exists($field, $config)) {
+            return [];
+        }
+
+        $value = $config[$field];
+        $errors = [];
+
+        (new LessonScopedAssetUrl($lesson->uuid))->validate(
+            $field,
+            $value,
+            function (string $message) use (&$errors, $field): void {
+                $errors[] = str_replace(':attribute', $field, $message);
+            }
+        );
+
+        return $errors;
     }
 
     /**
