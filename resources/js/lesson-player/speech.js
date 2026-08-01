@@ -41,9 +41,12 @@ export function utteranceTextFor(segment) {
 
 /**
  * @param {object} state plain object the UI binds to; mutated in place
- * @param {{ onSegmentChange?: (blockId: string|null, segmentId: string|null) => void }} hooks
+ * @param {{
+ *   onSegmentChange?: (blockId: string|null, segmentId: string|null) => void,
+ *   onResumePointChange?: (blockId: string|null, segmentId: string|null) => void,
+ * }} hooks
  */
-export function createSpeechController(state, { onSegmentChange } = {}) {
+export function createSpeechController(state, { onSegmentChange, onResumePointChange } = {}) {
   const synthesis = typeof window === 'undefined' ? undefined : window.speechSynthesis;
   const Utterance = typeof window === 'undefined' ? undefined : window.SpeechSynthesisUtterance;
   const supported = Boolean(synthesis && Utterance);
@@ -78,6 +81,12 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
   state.paused = false;
   state.activeBlockId = null;
   state.activeSegmentId = null;
+  // Where reading was interrupted, so the next play can pick it up. One slot,
+  // not a map: speak() already replaces whatever was in flight, so there is no
+  // such thing as two live sessions to remember separately. In memory only —
+  // it resets on reload, like the rest of playback position.
+  state.resumeBlockId = null;
+  state.resumeSegmentId = null;
   state.rate = clampRate(readStored(SPEECH_STORAGE_KEYS.rate, RATE.default));
   state.voiceUri = readStored(SPEECH_STORAGE_KEYS.voiceUri, '');
   state.voices = [];
@@ -114,6 +123,18 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
     return synthesis.getVoices().find((voice) => voice.voiceURI === state.voiceUri) ?? null;
   }
 
+  /** Fires the hook only when the slot actually moves, so the DOM is not swept for nothing. */
+  function setResumePoint(blockId, segmentId) {
+    if (state.resumeBlockId === blockId && state.resumeSegmentId === segmentId) {
+      return;
+    }
+
+    state.resumeBlockId = blockId;
+    state.resumeSegmentId = segmentId;
+
+    onResumePointChange?.(blockId, segmentId);
+  }
+
   function clearActive() {
     state.speaking = false;
     state.paused = false;
@@ -141,32 +162,75 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
     return true;
   }
 
-  /** @returns {boolean} whether a cancel was actually issued */
-  function stop() {
+  /**
+   * speak() stops whatever is in flight before starting, and restart() reaches
+   * speak() the same way — so recording lives on a parameter rather than in
+   * stop() itself. Only a stop a student actually asked for is worth
+   * remembering; a stop that exists to make room for the next utterance is not.
+   *
+   * @returns {boolean} whether a cancel was actually issued
+   */
+  function stopInternal(shouldRecord) {
     run += 1;
 
     const cancelled = cancelIfQueued();
+
+    // Before clearActive(), which is what nulls these.
+    if (shouldRecord && state.activeBlockId !== null && state.activeSegmentId !== null) {
+      setResumePoint(state.activeBlockId, state.activeSegmentId);
+    }
 
     clearActive();
 
     return cancelled;
   }
 
-  function speak(blockId, segments) {
+  /**
+   * The student-facing stop, and the one wired to visibilitychange and
+   * beforeunload — hence no parameters: those call it with an Event.
+   *
+   * @returns {boolean} whether a cancel was actually issued
+   */
+  function stop() {
+    return stopInternal(true);
+  }
+
+  /**
+   * @param {string} blockId
+   * @param {Array<object>} segments
+   * @param {string|null} [startAtSegmentId] begin here instead of at the first
+   *   speakable segment. An id that is no longer in the block — the manifest
+   *   can have changed since the position was recorded — reads from the start.
+   */
+  function speak(blockId, segments, startAtSegmentId = null) {
     if (!supported) {
       return;
     }
 
-    const speakable = (segments ?? []).filter(
+    const all = (segments ?? []).filter(
       (segment) => segment && typeof segment.text === 'string' && segment.text !== '',
     );
 
-    if (speakable.length === 0) {
+    if (all.length === 0) {
       return;
     }
 
+    const startIndex = startAtSegmentId === null
+      ? 0
+      : Math.max(0, all.findIndex((segment) => segment.id === startAtSegmentId));
+
+    const speakable = all.slice(startIndex);
+
     // Anything queued for another block is dropped before this one starts.
-    const cancelled = stop();
+    // Not stop(): this one is the machinery making room, not a student
+    // stopping, so it must not record a position.
+    const cancelled = stopInternal(false);
+
+    // Reading this block again — from its remembered point or from the top —
+    // consumes the marker either way.
+    if (state.resumeBlockId === blockId) {
+      setResumePoint(null, null);
+    }
 
     const thisRun = run;
     const voice = resolveVoice();
@@ -217,6 +281,13 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
             return;
           }
 
+          // Finishing is not being interrupted: a block read to its end has
+          // nothing left to resume, so it must not look like one that was
+          // stopped partway.
+          if (state.resumeBlockId === blockId) {
+            setResumePoint(null, null);
+          }
+
           clearActive();
         };
 
@@ -251,7 +322,12 @@ export function createSpeechController(state, { onSegmentChange } = {}) {
     state.paused = false;
   }
 
-  /** A new rate or voice takes effect at once, on the block being read. */
+  /**
+   * A new rate or voice takes effect at once, on the block being read. Always
+   * from the true beginning: it reaches speak() with no starting point, and
+   * speak()'s internal stop does not record one, so no resume state is created
+   * or consulted here.
+   */
   function restart() {
     const blockId = currentBlockId;
     const segments = currentSegments;

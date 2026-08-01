@@ -211,3 +211,147 @@ describe('what the deferral must not break', () => {
         expect(synthesis.spoken.map((utterance) => utterance.rate)).toEqual([1.5, 1.5]);
     });
 });
+
+describe('remembering where reading stopped', () => {
+    /** Speak, let the queue drain, and report the segment that is speaking. */
+    function playTo(controller, blockId, segments, index) {
+        controller.speak(blockId, segments);
+        vi.advanceTimersByTime(1000);
+
+        for (let i = 0; i <= index; i += 1) {
+            synthesis.spoken[i].onstart();
+        }
+    }
+
+    it('resumes from the segment that was active when stopped', () => {
+        playTo(speech, 'B1', SEGMENTS, 1);
+
+        speech.stop();
+
+        expect(state.resumeBlockId).toBe('B1');
+        expect(state.resumeSegmentId).toBe('html:1');
+
+        synthesis.spoken.length = 0;
+
+        speech.speak('B1', SEGMENTS, state.resumeSegmentId);
+        vi.advanceTimersByTime(1000);
+
+        expect(spokenText(synthesis)).toEqual(['Second']);
+    });
+
+    it('remembers nothing when a block is stopped before any segment started', () => {
+        speech.speak('B1', SEGMENTS);
+        vi.advanceTimersByTime(1000);
+
+        speech.stop();
+
+        expect(state.resumeBlockId).toBeNull();
+        expect(state.resumeSegmentId).toBeNull();
+    });
+
+    it('leaves no resume point behind when a block finishes on its own', () => {
+        playTo(speech, 'B1', SEGMENTS, 1);
+
+        synthesis.spoken[1].onend();
+
+        expect(state.resumeBlockId).toBeNull();
+        expect(state.resumeSegmentId).toBeNull();
+        expect(state.speaking).toBe(false);
+    });
+
+    it('replaces the remembered position when a second block is interrupted', () => {
+        playTo(speech, 'B1', SEGMENTS, 0);
+        speech.stop();
+
+        expect(state.resumeBlockId).toBe('B1');
+
+        synthesis.spoken.length = 0;
+
+        const other = [{ id: 'x:0', label: null, text: 'Other one' }];
+
+        playTo(speech, 'B2', other, 0);
+        speech.stop();
+
+        expect(state.resumeBlockId).toBe('B2');
+        expect(state.resumeSegmentId).toBe('x:0');
+    });
+
+    it('reports the resume point through its own hook, set and cleared', () => {
+        const events = [];
+        const localState = {};
+        const controller = createSpeechController(localState, {
+            onResumePointChange: (blockId, segmentId) => events.push(`${blockId}/${segmentId}`),
+        });
+
+        controller.speak('B1', SEGMENTS);
+        vi.advanceTimersByTime(1000);
+        synthesis.spoken[0].onstart();
+
+        controller.stop();
+
+        expect(events).toEqual(['B1/html:0']);
+
+        controller.speak('B1', SEGMENTS);
+        vi.advanceTimersByTime(1000);
+
+        expect(events).toEqual(['B1/html:0', 'null/null']);
+    });
+
+    it('starts over from the first segment and forgets the position', () => {
+        playTo(speech, 'B1', SEGMENTS, 1);
+        speech.stop();
+
+        synthesis.spoken.length = 0;
+
+        // No starting point: this is the Start over control.
+        speech.speak('B1', SEGMENTS);
+        vi.advanceTimersByTime(1000);
+
+        expect(spokenText(synthesis)).toEqual(['First', 'Second']);
+        expect(state.resumeBlockId).toBeNull();
+    });
+
+    it('reads from the start when the remembered segment is gone from the block', () => {
+        playTo(speech, 'B1', SEGMENTS, 1);
+        speech.stop();
+
+        synthesis.spoken.length = 0;
+
+        // The manifest changed under the recorded position.
+        const rewritten = [{ id: 'html:9', label: null, text: 'Rewritten' }];
+
+        speech.speak('B1', rewritten, state.resumeSegmentId);
+        vi.advanceTimersByTime(1000);
+
+        expect(spokenText(synthesis)).toEqual(['Rewritten']);
+    });
+
+    it('does not record or consult a resume point when a rate change restarts a read', () => {
+        playTo(speech, 'B1', SEGMENTS, 1);
+
+        synthesis.spoken.length = 0;
+
+        // setRate() restarts the block in flight.
+        speech.setRate(1.5);
+        vi.advanceTimersByTime(1000);
+
+        expect(state.resumeBlockId).toBeNull();
+        expect(spokenText(synthesis)).toEqual(['First', 'Second']);
+    });
+
+    it('keeps another block’s remembered position when a different block finishes', () => {
+        playTo(speech, 'B1', SEGMENTS, 0);
+        speech.stop();
+
+        synthesis.spoken.length = 0;
+
+        const other = [{ id: 'x:0', label: null, text: 'Other one' }];
+
+        speech.speak('B2', other);
+        vi.advanceTimersByTime(1000);
+        synthesis.spoken[0].onend();
+
+        expect(state.resumeBlockId).toBe('B1');
+        expect(state.resumeSegmentId).toBe('html:0');
+    });
+});

@@ -443,6 +443,18 @@
     border-radius: 2px;
 }
 
+/* Where reading stopped, waiting to be picked up again. Quieter than the live
+   highlight on purpose — it must not read as "this is playing". Same rule
+   about colour applies: the dashed edge and the inset rule are the cue, and a
+   visually hidden "Reading paused here" carries it to screen readers. No
+   generated content, so nothing here can be announced twice. */
+[data-speech-id].speech-resume-marker {
+    outline: 2px dashed var(--color-steel-700);
+    outline-offset: 2px;
+    border-radius: 2px;
+    box-shadow: inset 3px 0 0 0 var(--color-arc);
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

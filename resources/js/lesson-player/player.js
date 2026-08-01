@@ -57,6 +57,8 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       paused: false,
       activeBlockId: null,
       activeSegmentId: null,
+      resumeBlockId: null,
+      resumeSegmentId: null,
       rate: RATE.default,
       voiceUri: '',
       voices: [],
@@ -65,6 +67,7 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
     init() {
       this.speechController = createSpeechController(this.speech, {
         onSegmentChange: (blockId, segmentId) => this.highlightSegment(blockId, segmentId),
+        onResumePointChange: (blockId, segmentId) => this.markResumePoint(blockId, segmentId),
       });
 
       this.speechController.init();
@@ -526,6 +529,10 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       return this.speech.speaking && this.speech.activeBlockId === blockId;
     },
 
+    hasResumePoint(blockId) {
+      return this.speech.resumeBlockId === blockId && this.speech.resumeSegmentId !== null;
+    },
+
     toggleReadAloud(blockId) {
       if (this.isReading(blockId)) {
         this.stopReading();
@@ -533,6 +540,14 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
         return;
       }
 
+      // Picks up where this block was stopped, when that is where it was.
+      const startAt = this.hasResumePoint(blockId) ? this.speech.resumeSegmentId : null;
+
+      this.speechController?.speak(blockId, this.speechSegmentsFor(blockId), startAt);
+    },
+
+    /** The way back to segment one once Read aloud resumes by default. */
+    startOverReading(blockId) {
       this.speechController?.speak(blockId, this.speechSegmentsFor(blockId));
     },
 
@@ -589,12 +604,67 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       const selector = `[data-block-id=${quoteAttribute(blockId)}] [data-speech-id=${quoteAttribute(segmentId)}]`;
 
       this.$root.querySelectorAll(selector).forEach((element) => {
+        // A segment being read now has superseded any marker it was carrying
+        // from a previous stop; the two states must never sit on one element.
+        this.clearResumeMarkerFrom(element);
+
         element.classList.add('is-speaking');
         element.setAttribute('aria-current', 'true');
       });
     },
+
+    /**
+     * Marks where reading stopped, the same imperative way highlightSegment()
+     * works. Deliberately not aria-current: a remembered position is not the
+     * active one, so it carries its own visually hidden label instead.
+     */
+    markResumePoint(blockId, segmentId) {
+      this.$root
+        .querySelectorAll(`[data-speech-id].${RESUME_MARKER_CLASS}`)
+        .forEach((element) => this.clearResumeMarkerFrom(element));
+
+      if (! blockId || ! segmentId) {
+        return;
+      }
+
+      const selector = `[data-block-id=${quoteAttribute(blockId)}] [data-speech-id=${quoteAttribute(segmentId)}]`;
+
+      this.$root.querySelectorAll(selector).forEach((element) => {
+        // The segment currently being spoken keeps that state; it has not
+        // stopped anywhere.
+        if (element.classList.contains('is-speaking')) {
+          return;
+        }
+
+        element.classList.add(RESUME_MARKER_CLASS);
+
+        const label = document.createElement('span');
+
+        label.className = `sr-only ${RESUME_LABEL_CLASS}`;
+        label.textContent = RESUME_LABEL_TEXT;
+
+        element.append(label);
+      });
+    },
+
+    /** Class and label go together, always — never one without the other. */
+    clearResumeMarkerFrom(element) {
+      element.classList.remove(RESUME_MARKER_CLASS);
+
+      element.querySelectorAll(`.${RESUME_LABEL_CLASS}`).forEach((label) => label.remove());
+    },
   };
 }
+
+/**
+ * The resume marker. Its label is a real text node rather than an aria-label
+ * because the element it sits on is author content: speech text comes from the
+ * manifest segment array, never the DOM, so a hidden child cannot reach the
+ * speech engine. See utteranceTextFor() in speech.js.
+ */
+const RESUME_MARKER_CLASS = 'speech-resume-marker';
+const RESUME_LABEL_CLASS = 'speech-resume-label';
+const RESUME_LABEL_TEXT = 'Reading paused here';
 
 /** Segment ids come from author content, so they are quoted, not trusted. */
 function quoteAttribute(value) {

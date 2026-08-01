@@ -239,4 +239,147 @@ describe('read-aloud segments', () => {
 
         expect(player.isReading('B1')).toBe(false);
     });
+
+    /**
+     * The marker is applied imperatively, so these stand in for the elements
+     * it reaches — enough of one to record what was done to it, and no more.
+     * The suite stays on the node environment it was written for.
+     */
+    function fakeElement() {
+        const element = {
+            classes: new Set(),
+            attributes: {},
+            children: [],
+            classList: {
+                add: (name) => element.classes.add(name),
+                remove: (name) => element.classes.delete(name),
+                contains: (name) => element.classes.has(name),
+            },
+            setAttribute: (name, value) => {
+                element.attributes[name] = value;
+            },
+            removeAttribute: (name) => {
+                delete element.attributes[name];
+            },
+            append: (child) => element.children.push(child),
+            querySelectorAll: (selector) => element.children.filter(
+                (child) => selector.includes(child.className.split(' ').pop()),
+            ),
+        };
+
+        return element;
+    }
+
+    function playerWithSegment(element) {
+        const player = makePlayer([page()]);
+
+        // Every selector this component builds resolves to the one element
+        // under test, except the sweeps, which are matched on class.
+        player.$root = {
+            querySelector: () => null,
+            querySelectorAll: (selector) => {
+                if (selector.startsWith('[data-speech-id].')) {
+                    const wanted = selector.split('.').pop();
+
+                    return element.classes.has(wanted) ? [element] : [];
+                }
+
+                return [element];
+            },
+        };
+
+        return player;
+    }
+
+    beforeEach(() => {
+        globalThis.document = {
+            createElement: () => {
+                const node = { className: '', textContent: '', remove: null };
+
+                node.remove = () => {
+                    node.removed = true;
+                };
+
+                return node;
+            },
+        };
+    });
+
+    it('marks the resume point with a hidden label rather than aria-current', () => {
+        const element = fakeElement();
+        const player = playerWithSegment(element);
+
+        player.markResumePoint('B1', 'html:1');
+
+        expect(element.classes.has('speech-resume-marker')).toBe(true);
+        expect(element.attributes['aria-current']).toBeUndefined();
+        expect(element.children).toHaveLength(1);
+        expect(element.children[0].textContent).toBe('Reading paused here');
+        expect(element.children[0].className).toContain('sr-only');
+    });
+
+    it('clears the class and its label together, never one alone', () => {
+        const element = fakeElement();
+        const player = playerWithSegment(element);
+
+        player.markResumePoint('B1', 'html:1');
+        player.markResumePoint(null, null);
+
+        expect(element.classes.has('speech-resume-marker')).toBe(false);
+        expect(element.children.filter((child) => ! child.removed)).toHaveLength(0);
+    });
+
+    it('never leaves a second marker in the document', () => {
+        const element = fakeElement();
+        const player = playerWithSegment(element);
+
+        player.markResumePoint('B1', 'html:1');
+        player.markResumePoint('B1', 'html:0');
+
+        expect(element.classes.has('speech-resume-marker')).toBe(true);
+        expect(element.children.filter((child) => ! child.removed)).toHaveLength(1);
+    });
+
+    it('drops the marker from a segment that starts speaking', () => {
+        const element = fakeElement();
+        const player = playerWithSegment(element);
+
+        player.markResumePoint('B1', 'html:1');
+        player.highlightSegment('B1', 'html:1');
+
+        expect(element.classes.has('is-speaking')).toBe(true);
+        expect(element.classes.has('speech-resume-marker')).toBe(false);
+        expect(element.children.filter((child) => ! child.removed)).toHaveLength(0);
+        expect(element.attributes['aria-current']).toBe('true');
+    });
+
+    it('reports a resume point only for the block that owns it', () => {
+        const player = makePlayer([page()]);
+
+        expect(player.hasResumePoint('B1')).toBe(false);
+
+        player.speech.resumeBlockId = 'B1';
+        player.speech.resumeSegmentId = 'html:1';
+
+        expect(player.hasResumePoint('B1')).toBe(true);
+        expect(player.hasResumePoint('B2')).toBe(false);
+    });
+
+    it('asks to resume only where a position was remembered', () => {
+        const calls = [];
+        const player = makePlayer([page()]);
+
+        player.speechController = { speak: (...args) => calls.push(args) };
+
+        player.toggleReadAloud('B1');
+
+        player.speech.resumeBlockId = 'B1';
+        player.speech.resumeSegmentId = 'html:1';
+        player.toggleReadAloud('B1');
+
+        // Start over ignores the remembered position on purpose.
+        player.startOverReading('B1');
+
+        expect(calls.map((call) => call[2])).toEqual([null, 'html:1', undefined]);
+    });
 });
