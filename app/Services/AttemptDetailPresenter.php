@@ -19,6 +19,7 @@ class AttemptDetailPresenter
         private readonly RetryPolicy $retries,
         private readonly BlockedAttemptService $blocked,
         private readonly SubmissionReviewService $reviews,
+        private readonly AttemptStateFormatter $formatter,
     ) {
     }
 
@@ -71,6 +72,10 @@ class AttemptDetailPresenter
             }
         }
 
+        // One call, both answers. Collapsing this to a bare boolean is what
+        // left teachers guessing which block was out of retries.
+        $blockedBlocks = collect($this->blocked->blockedBlocks($attempt));
+
         $pageTitle = null;
         $pageIndex = null;
         $pages = $manifest['pages'] ?? [];
@@ -110,8 +115,9 @@ class AttemptDetailPresenter
             'time_to_complete_seconds' => $attempt->completed_at !== null && $attempt->started_at !== null
                 ? $attempt->started_at->diffInSeconds($attempt->completed_at)
                 : null,
-            'blocked' => $this->blocked->isBlocked($attempt),
-            'blocked_blocks' => $this->blocked->blockedBlocks($attempt),
+            'blocked' => $blockedBlocks->isNotEmpty(),
+            'blocked_blocks' => $blockedBlocks->all(),
+            'blocked_block_ids' => $blockedBlocks->pluck('block_id')->all(),
             'blocks' => $blocks,
             'retry_grants' => $attempt->retryGrants->map(fn ($grant) => [
                 'block_id' => $grant->block_id,
@@ -184,6 +190,14 @@ class AttemptDetailPresenter
                 'attempt_number' => $submission->attempt_number,
                 'submitted_at' => $submission->submitted_at,
                 'response' => $submission->response,
+                // Resolved here, not in Blade: the draft and every submission
+                // share one shape per block type, so decoding them in two
+                // places is how the two would drift apart.
+                'formatted' => $this->formatter->format(
+                    $typeKey,
+                    is_array($submission->response) ? $submission->response : null,
+                    $config,
+                ),
                 'requires_manual_review' => (bool) $submission->requires_manual_review,
                 'needs_review' => $needsReview,
                 'is_latest_submission' => $isLatestSubmission,
@@ -230,6 +244,7 @@ class AttemptDetailPresenter
             'holds_state' => $type?->holdsStudentState() === true,
             'current_work' => [
                 'state' => $state,
+                'formatted' => $this->formatter->format($typeKey, $state, $config),
                 'updated_at' => $stateRow?->updated_at,
                 'differs_from_latest_submission' => $draftDiffers,
                 'has_state' => $state !== null,
