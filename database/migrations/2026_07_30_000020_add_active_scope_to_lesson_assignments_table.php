@@ -56,7 +56,7 @@ return new class extends Migration
                 // (active_scope NULL) fall out of the one-active constraint.
                 $table->string('active_scope', 64)
                     ->nullable()
-                    ->storedAs(
+                    ->virtualAs(
                         "CASE WHEN `archived_at` IS NULL ".
                         "THEN CONCAT(`school_class_id`, ':', `lesson_id`) ".
                         'ELSE NULL END'
