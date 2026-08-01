@@ -341,12 +341,46 @@
         @apply text-steel-300;
     }
 
-    .player-progress {
-        @apply bg-steel-800;
+    /* Numbered page breadcrumb. Horizontally scrollable so many-page lessons
+       stay in the header without wrapping onto a second row (placement sticky
+       offsets are tuned against header height — do not retune them here). */
+    .player-breadcrumb {
+        @apply mt-2 max-w-full;
     }
 
-    .player-progress-fill {
-        background-image: linear-gradient(to right, var(--color-arc), var(--color-molten));
+    .player-breadcrumb-list {
+        @apply flex max-w-full list-none flex-nowrap items-center gap-1.5 overflow-x-auto p-0;
+        scrollbar-width: thin;
+    }
+
+    .player-breadcrumb-item {
+        @apply shrink-0;
+    }
+
+    .player-breadcrumb-step {
+        @apply inline-flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-semibold;
+        font-family: var(--font-utility);
+        letter-spacing: 0.02em;
+    }
+
+    .player-breadcrumb-step-current {
+        border-color: var(--color-molten);
+        background-color: var(--color-molten);
+        @apply text-steel-950;
+    }
+
+    .player-breadcrumb-step-reached {
+        @apply border-steel-400 bg-steel-800 text-white;
+    }
+
+    .player-breadcrumb-step-reached:hover {
+        border-color: var(--color-arc);
+        @apply bg-steel-700;
+    }
+
+    .player-breadcrumb-step-unreached {
+        @apply cursor-default border-steel-700 bg-steel-800 text-steel-400;
+        opacity: 0.55;
     }
 
     .player-footer {

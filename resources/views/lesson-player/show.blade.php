@@ -40,7 +40,38 @@
         <div class="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
                 <h1 class="player-heading truncate text-xl sm:text-2xl">{{ $manifest['title'] }}</h1>
-                <p class="player-meta player-header-meta text-sm" x-text="`Page ${currentIndex + 1} of ${totalPages}`"></p>
+                {{-- Numbered page breadcrumb: reached pages are buttons; the
+                     current page is a non-interactive current marker; unreached
+                     (and back-locked) pages are inert. goToBreadcrumb() enforces
+                     the watermark — styling alone is not the gate. --}}
+                <nav x-show="totalPages > 0"
+                     x-cloak
+                     class="player-breadcrumb"
+                     aria-label="Lesson pages">
+                    <ol class="player-breadcrumb-list">
+                        <template x-for="index in pageIndexes" :key="index">
+                            <li class="player-breadcrumb-item">
+                                <template x-if="isBreadcrumbCurrent(index)">
+                                    <span class="player-breadcrumb-step player-breadcrumb-step-current"
+                                          aria-current="page"
+                                          x-text="index + 1"></span>
+                                </template>
+                                <template x-if="! isBreadcrumbCurrent(index) && canGoToBreadcrumb(index)">
+                                    <button type="button"
+                                            class="player-breadcrumb-step player-breadcrumb-step-reached"
+                                            :aria-label="`Go to page ${index + 1}`"
+                                            @click="goToBreadcrumb(index)"
+                                            x-text="index + 1"></button>
+                                </template>
+                                <template x-if="! isBreadcrumbCurrent(index) && ! canGoToBreadcrumb(index)">
+                                    <span class="player-breadcrumb-step player-breadcrumb-step-unreached"
+                                          aria-disabled="true"
+                                          x-text="index + 1"></span>
+                                </template>
+                            </li>
+                        </template>
+                    </ol>
+                </nav>
                 <p class="player-header-meta text-sm" x-show="readOnly" x-cloak>{{ __('player.read_only') }}</p>
                 <p class="player-header-meta text-sm font-semibold"
                    role="status"
@@ -117,16 +148,6 @@
                     </div>
                 </template>
             </div>
-        </div>
-
-        <div class="player-progress h-2 w-full"
-             role="progressbar"
-             aria-label="Lesson progress"
-             aria-valuemin="1"
-             :aria-valuenow="currentIndex + 1"
-             :aria-valuemax="totalPages"
-             :aria-valuetext="`Page ${currentIndex + 1} of ${totalPages}`">
-            <div class="player-progress-fill h-full" :style="`width: ${progressPercent}%`"></div>
         </div>
     </header>
 

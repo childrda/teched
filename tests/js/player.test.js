@@ -28,12 +28,20 @@ function page(overrides = {}) {
     };
 }
 
-function makePlayer(pages) {
-    const player = lessonPlayer(manifest(pages));
+function makePlayer(pages, attempt = null, capabilities = null) {
+    const player = lessonPlayer(manifest(pages), attempt, capabilities);
 
     player.$nextTick = (callback) => callback();
     player.$root = { querySelector: () => null, querySelectorAll: () => [] };
     player.$refs = {};
+
+    return player;
+}
+
+function initPlayer(pages, attempt = null, capabilities = null) {
+    const player = makePlayer(pages, attempt, capabilities);
+
+    player.init();
 
     return player;
 }
@@ -102,6 +110,217 @@ describe('navigation', () => {
         locked.goBack();
 
         expect(locked.currentIndex).toBe(1);
+    });
+});
+
+describe('numbered page breadcrumb', () => {
+    const threePages = () => [
+        page({ page_id: 'P1', title: 'One' }),
+        page({ page_id: 'P2', title: 'Two', position: 2 }),
+        page({
+            page_id: 'P3',
+            title: 'Three',
+            position: 3,
+            settings: { allow_back_navigation: true, allow_skip: false },
+        }),
+    ];
+
+    it('seeds furthestIndexReached from the restored current page on an active attempt', () => {
+        const player = initPlayer(threePages(), {
+            id: 1,
+            status: 'in_progress',
+            current_page_id: 'P2',
+            revision: 1,
+            block_states: [],
+        }, {
+            // Keep persist off so init() does not touch document/localStorage;
+            // furthest seeding only depends on restore + gate flags.
+            canPersist: false,
+            canGrade: true,
+            canAdvancePersistently: true,
+            bypassCompletionGates: false,
+        });
+
+        expect(player.currentIndex).toBe(1);
+        expect(player.furthestIndexReached).toBe(1);
+    });
+
+    it('marks every page reached for a completed read-only attempt', () => {
+        const player = initPlayer(threePages(), {
+            id: 1,
+            status: 'completed',
+            read_only: true,
+            current_page_id: 'P3',
+            revision: 3,
+            block_states: [],
+        }, {
+            canPersist: false,
+            canGrade: false,
+            canAdvancePersistently: false,
+            bypassCompletionGates: false,
+        });
+
+        expect(player.readOnly).toBe(true);
+        expect(player.furthestIndexReached).toBe(2);
+        expect(player.canGoToBreadcrumb(0)).toBe(true);
+        expect(player.canGoToBreadcrumb(2)).toBe(true);
+    });
+
+    it('opens every page for preview (bypassCompletionGates)', () => {
+        const player = initPlayer(threePages(), {
+            current_page_id: 'P1',
+            status: 'in_progress',
+            read_only: false,
+        }, {
+            canPersist: false,
+            canGrade: false,
+            canAdvancePersistently: false,
+            bypassCompletionGates: true,
+        });
+
+        expect(player.furthestIndexReached).toBe(2);
+        expect(player.canGoToBreadcrumb(2)).toBe(true);
+    });
+
+    it('renders no reached index when the lesson has zero pages', () => {
+        const player = initPlayer([]);
+
+        expect(player.totalPages).toBe(0);
+        expect(player.furthestIndexReached).toBe(-1);
+        expect(player.pageIndexes).toEqual([]);
+        expect(player.canGoToBreadcrumb(0)).toBe(false);
+    });
+
+    it('navigates to an already-reached page via goToBreadcrumb', async () => {
+        const player = makePlayer(threePages());
+
+        await player.goForward();
+        await player.goForward();
+
+        expect(player.furthestIndexReached).toBe(2);
+
+        player.goToBreadcrumb(0);
+
+        expect(player.currentIndex).toBe(0);
+    });
+
+    it('refuses an unreached page even when goToBreadcrumb is called directly', async () => {
+        const player = makePlayer(threePages());
+
+        await player.goForward();
+
+        expect(player.furthestIndexReached).toBe(1);
+
+        player.goToBreadcrumb(2);
+
+        expect(player.currentIndex).toBe(1);
+        expect(player.furthestIndexReached).toBe(1);
+    });
+
+    it('does not advance furthestIndexReached from goTo or goBack', async () => {
+        const player = makePlayer(threePages());
+
+        await player.goForward();
+
+        expect(player.furthestIndexReached).toBe(1);
+
+        player.goTo(0);
+        expect(player.furthestIndexReached).toBe(1);
+
+        player.goBack();
+        expect(player.currentIndex).toBe(0);
+        expect(player.furthestIndexReached).toBe(1);
+
+        // Raw goTo past the watermark still moves (generic jump) but must not
+        // widen the breadcrumb's earned range.
+        player.goTo(2);
+        expect(player.currentIndex).toBe(2);
+        expect(player.furthestIndexReached).toBe(1);
+    });
+
+    it('advances furthestIndexReached after a local goForward', async () => {
+        const player = makePlayer(threePages());
+
+        expect(player.furthestIndexReached).toBe(0);
+
+        await player.goForward();
+
+        expect(player.currentIndex).toBe(1);
+        expect(player.furthestIndexReached).toBe(1);
+    });
+
+    it('blocks backward breadcrumb targets when allow_back_navigation is false', async () => {
+        const player = makePlayer([
+            page({ page_id: 'P1' }),
+            page({
+                page_id: 'P2',
+                position: 2,
+                settings: { allow_back_navigation: false, allow_skip: false },
+            }),
+            page({ page_id: 'P3', position: 3 }),
+        ]);
+
+        await player.goForward();
+        await player.goForward();
+
+        // Step back to P2 via goTo (simulating having been there), then lock.
+        player.goTo(1);
+
+        expect(player.currentIndex).toBe(1);
+        expect(player.furthestIndexReached).toBe(2);
+        expect(player.canGoToBreadcrumb(0)).toBe(false);
+        expect(player.canGoToBreadcrumb(2)).toBe(true);
+
+        player.goToBreadcrumb(0);
+        expect(player.currentIndex).toBe(1);
+
+        player.goToBreadcrumb(2);
+        expect(player.currentIndex).toBe(2);
+    });
+
+    it('no-ops when the current page breadcrumb is activated', async () => {
+        const player = makePlayer(threePages());
+
+        await player.goForward();
+
+        expect(player.currentIndex).toBe(1);
+        expect(player.canGoToBreadcrumb(1)).toBe(true);
+
+        const sideEffects = [];
+
+        player.announce = (message) => sideEffects.push(message);
+        player.focusPageHeading = () => sideEffects.push('focus');
+        player.scrollToTop = () => sideEffects.push('scroll');
+
+        player.goToBreadcrumb(1);
+
+        expect(player.currentIndex).toBe(1);
+        expect(sideEffects).toEqual([]);
+    });
+
+    it('does not treat unreached pages as activatable', () => {
+        const player = makePlayer(threePages());
+
+        expect(player.isBreadcrumbReached(0)).toBe(true);
+        expect(player.isBreadcrumbReached(1)).toBe(false);
+        expect(player.canGoToBreadcrumb(1)).toBe(false);
+        expect(player.isBreadcrumbCurrent(0)).toBe(true);
+    });
+
+    it('advances furthestIndexReached when the author allows skip', () => {
+        const player = makePlayer([
+            page({
+                page_id: 'P1',
+                settings: { allow_back_navigation: true, allow_skip: true },
+            }),
+            page({ page_id: 'P2', position: 2 }),
+        ]);
+
+        player.skip();
+
+        expect(player.currentIndex).toBe(1);
+        expect(player.furthestIndexReached).toBe(1);
+        expect(player.canGoToBreadcrumb(1)).toBe(true);
     });
 });
 

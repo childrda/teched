@@ -30,6 +30,12 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
     capabilities: caps,
     pages: Array.isArray(manifest?.pages) ? manifest.pages : [],
     currentIndex: 0,
+    /**
+     * Furthest page index the student has actually earned (Continue) or been
+     * shown (preview / skip). UI convenience for the breadcrumb only — not a
+     * security boundary. Seeded in init(); advanced only by forward paths.
+     */
+    furthestIndexReached: 0,
     attemptRevision: restore?.revision ?? 0,
     announcement: '',
     settingsOpen: false,
@@ -79,6 +85,8 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
           this.currentIndex = index;
         }
       }
+
+      this.furthestIndexReached = this.initialFurthestIndex();
 
       // When canPersist is false (preview), never touch localStorage autosave
       // keys and never start active-time timers — shared Chromebook carts.
@@ -183,8 +191,96 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       return Math.round(((this.currentIndex + 1) / this.totalPages) * 100);
     },
 
+    /** Indices 0..totalPages-1 for the breadcrumb x-for. Empty when no pages. */
+    get pageIndexes() {
+      return Array.from({ length: this.totalPages }, (_, index) => index);
+    },
+
     get canGoBack() {
       return this.currentIndex > 0 && this.pageSettings.allow_back_navigation !== false;
+    },
+
+    /**
+     * Seed furthestIndexReached after currentIndex is restored.
+     *
+     * - Zero pages: -1 so nothing is "reached" and the breadcrumb stays empty.
+     * - Completed / read-only (gates enforced): every page was necessarily reached.
+     * - Preview / bypassCompletionGates: free navigation — all pages reachable.
+     * - Active attempt: restore.current_page_id is only written by Continue, so
+     *   the restored currentIndex already is the furthest earned page.
+     */
+    initialFurthestIndex() {
+      if (this.totalPages === 0) {
+        return -1;
+      }
+
+      if (this.readOnly && ! this.capabilities.bypassCompletionGates) {
+        return this.totalPages - 1;
+      }
+
+      if (this.capabilities.bypassCompletionGates) {
+        return this.totalPages - 1;
+      }
+
+      return this.currentIndex;
+    },
+
+    markReached(index) {
+      if (this.totalPages === 0 || ! Number.isFinite(index)) {
+        return;
+      }
+
+      const clamped = Math.min(Math.max(Math.trunc(index), 0), this.totalPages - 1);
+
+      this.furthestIndexReached = Math.max(this.furthestIndexReached, clamped);
+    },
+
+    isBreadcrumbCurrent(index) {
+      return index === this.currentIndex;
+    },
+
+    isBreadcrumbReached(index) {
+      return Number.isFinite(index) && index >= 0 && index <= this.furthestIndexReached;
+    },
+
+    /**
+     * Whether the breadcrumb may navigate to index. Distinct from goTo():
+     * unreached pages and backward jumps blocked by allow_back_navigation are refused.
+     * Forward-to-already-earned (current < index <= furthest) is allowed even when
+     * the current page disallows going back.
+     */
+    canGoToBreadcrumb(index) {
+      if (this.totalPages === 0 || ! Number.isFinite(index)) {
+        return false;
+      }
+
+      const target = Math.trunc(index);
+
+      if (target < 0 || target >= this.totalPages) {
+        return false;
+      }
+
+      if (target === this.currentIndex) {
+        return true;
+      }
+
+      if (target > this.furthestIndexReached) {
+        return false;
+      }
+
+      if (target < this.currentIndex) {
+        return this.pageSettings.allow_back_navigation !== false;
+      }
+
+      return true;
+    },
+
+    goToBreadcrumb(index) {
+      if (! this.canGoToBreadcrumb(index)) {
+        return;
+      }
+
+      this.goTo(index);
     },
 
     get allowSkip() {
@@ -351,6 +447,7 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       // persisted current_page_id Continue endpoint.
       if (! this.capabilities.canAdvancePersistently) {
         this.goTo(this.currentIndex + 1);
+        this.markReached(this.currentIndex);
 
         return;
       }
@@ -373,6 +470,7 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
       // locally — the live player always has restore data from the server.
       if (! this.attempt?.id) {
         this.goTo(this.currentIndex + 1);
+        this.markReached(this.currentIndex);
 
         return;
       }
@@ -439,6 +537,7 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
 
         if (nextIndex >= 0) {
           this.goTo(nextIndex);
+          this.markReached(this.currentIndex);
         }
       } catch {
         this.announce(this.strings.pending);
@@ -459,7 +558,10 @@ export function lessonPlayer(manifest, attempt = null, capabilities = null) {
         return;
       }
 
+      // Skip is an author-allowed forward move that bypasses goForward(); the
+      // page is still shown, so the breadcrumb watermark must advance with it.
       this.goTo(this.currentIndex + 1);
+      this.markReached(this.currentIndex);
     },
 
     goTo(index) {

@@ -54,7 +54,11 @@ test('the player renders a published lesson', function () {
         ->assertViewIs('lesson-player.show')
         ->assertSee($lesson->title)
         ->assertSee('Everything Page')
-        ->assertSee('Lesson navigation', false);
+        ->assertSee('Lesson navigation', false)
+        ->assertSee('Lesson pages', false)
+        ->assertSee('player-breadcrumb', false)
+        ->assertDontSee('role="progressbar"', false)
+        ->assertDontSee('Page ${currentIndex + 1} of ${totalPages}', false);
 });
 
 test('the player mirrors the API availability rules exactly', function () {
