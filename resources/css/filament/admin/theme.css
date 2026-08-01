@@ -7,3 +7,186 @@
  */
 @source '../../../../app/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
+
+/*
+ * "Steel & arc" — the panel's visual identity.
+ *
+ * This stylesheet is loaded by AdminPanelProvider's ->viteTheme() and by
+ * nothing else, so it cannot reach the student player or /staff. The primary,
+ * warning and gray ramps are registered in PHP; everything below is the type
+ * treatment and the surface treatment that the color ramps alone cannot carry.
+ *
+ * Class names are taken from Filament v5's own component stylesheets under
+ * each package's resources/css directory in vendor, not guessed.
+ */
+
+:root {
+    --tls-steel-950: #12161b;
+    --tls-steel-800: #1d242c;
+    --tls-steel-700: #3c4a59;
+    --tls-steel-100: #edf1f4;
+    --tls-arc: #ff5a1f;
+    --tls-molten: #ffb13c;
+    --tls-hazard: #ffc400;
+
+    /*
+     * --font-family / --mono-font-family / --serif-font-family are emitted into
+     * :root by Filament's base layout from the panel's font registrations.
+     */
+    --tls-font-display: var(--serif-font-family), 'Bebas Neue', var(--font-family),
+        ui-sans-serif, sans-serif;
+    --tls-font-utility: var(--mono-font-family), 'IBM Plex Mono', ui-monospace,
+        SFMono-Regular, Menlo, monospace;
+
+    --tls-rivet: color-mix(in oklab, var(--tls-steel-700) 40%, transparent);
+    --tls-hairline: color-mix(in oklab, var(--tls-steel-700) 18%, transparent);
+}
+
+.dark {
+    --tls-rivet: color-mix(in oklab, #ffffff 22%, transparent);
+    --tls-hairline: color-mix(in oklab, #ffffff 12%, transparent);
+}
+
+/*
+ * Page background: steel instead of Filament's default gray-50. Scoped with
+ * html:not(.dark) so it outranks the utility without also winning in dark
+ * mode, where the steel-tinted gray-950 from the registered ramp is already
+ * the right surface.
+ */
+html:not(.dark) .fi-body {
+    background-color: var(--tls-steel-100);
+}
+
+/* Display type: page and section headings. */
+.fi-header-heading,
+.fi-simple-header-heading,
+.fi-section-header-heading {
+    font-family: var(--tls-font-display);
+    /* Bebas Neue ships one weight; leaving the inherited bold on would force
+       the browser to synthesise it. */
+    font-weight: 400;
+    text-transform: uppercase;
+}
+
+.fi-header-heading,
+.fi-simple-header-heading {
+    font-size: 2rem;
+    line-height: 1.1;
+    letter-spacing: 0.015em;
+}
+
+@media (min-width: 640px) {
+    .fi-header-heading {
+        font-size: 2.5rem;
+    }
+}
+
+.fi-section-header-heading {
+    font-size: 1.125rem;
+    line-height: 1.4;
+    letter-spacing: 0.05em;
+}
+
+/*
+ * Utility type: the small data that already exists — labels, counts, headers.
+ * The sort button needs naming separately: user-agent stylesheets reset
+ * text-transform on form controls, so a sortable column would otherwise stay
+ * sentence case next to its uppercase neighbours.
+ */
+.fi-wi-stats-overview-stat-label,
+.fi-ta-header-cell,
+.fi-ta-header-cell-sort-btn,
+.fi-sidebar-group-label {
+    font-family: var(--tls-font-utility);
+    font-size: 0.75rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.fi-badge {
+    font-family: var(--tls-font-utility);
+    letter-spacing: 0.02em;
+}
+
+/* Counts read as data, so they get the display face at size. */
+.fi-wi-stats-overview-stat-value {
+    font-family: var(--tls-font-display);
+    font-weight: 400;
+    font-size: 2.75rem;
+    line-height: 1;
+    letter-spacing: 0.01em;
+}
+
+/*
+ * Card treatment — a light version of the standalone lesson page's: a hairline
+ * border, four rivet marks set into the padding, and an arc rule along the top
+ * edge. Applied to the dashboard's widgets and to the login card, which are the
+ * surfaces a teacher meets first. Deliberately not applied to form or table
+ * sections inside resources, where Filament's own header/divider structure
+ * already does this work.
+ */
+.fi-wi-stats-overview-stat,
+.fi-wi-widget > .fi-section:not(.fi-section-not-contained):not(.fi-aside),
+.fi-simple-main {
+    position: relative;
+    border: 1px solid var(--tls-hairline);
+}
+
+.fi-wi-stats-overview-stat::before,
+.fi-wi-widget > .fi-section:not(.fi-section-not-contained):not(.fi-aside)::before,
+.fi-simple-main::before {
+    content: '';
+    position: absolute;
+    inset: 0.5rem;
+    pointer-events: none;
+    background-image:
+        radial-gradient(circle, var(--tls-rivet) 0 1.5px, transparent 2px),
+        radial-gradient(circle, var(--tls-rivet) 0 1.5px, transparent 2px),
+        radial-gradient(circle, var(--tls-rivet) 0 1.5px, transparent 2px),
+        radial-gradient(circle, var(--tls-rivet) 0 1.5px, transparent 2px);
+    background-size: 6px 6px;
+    background-repeat: no-repeat;
+    background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+}
+
+.fi-wi-stats-overview-stat::after,
+.fi-wi-widget > .fi-section:not(.fi-section-not-contained):not(.fi-aside)::after,
+.fi-simple-main::after {
+    content: '';
+    position: absolute;
+    /* Inset past the card's corner radius: a 2px-tall bar cannot follow a
+       0.75rem curve, so squaring it off inside the corners is the only way it
+       reads as part of the card. */
+    inset-inline: 0.75rem;
+    top: 0;
+    height: 2px;
+    pointer-events: none;
+    background-image: linear-gradient(
+        to right,
+        var(--tls-arc),
+        var(--tls-molten) 35%,
+        transparent 75%
+    );
+}
+
+/* The login card only gets rounded corners from `sm:` upwards. */
+.fi-simple-main {
+    border-inline: 0;
+}
+
+@media (min-width: 640px) {
+    .fi-simple-main {
+        border-inline: 1px solid var(--tls-hairline);
+    }
+}
+
+/*
+ * Chrome: an arc rule pinning the topbar to the page below it. Drawn as an
+ * inset shadow rather than a border so the topbar stays exactly 4rem tall —
+ * the sidebar's `lg:top-[4rem]` offset depends on that.
+ */
+.fi-topbar {
+    box-shadow:
+        inset 0 -2px 0 0 color-mix(in oklab, var(--tls-arc) 55%, transparent),
+        0 1px 2px 0 color-mix(in oklab, var(--tls-steel-950) 8%, transparent);
+}
