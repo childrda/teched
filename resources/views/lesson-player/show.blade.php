@@ -8,7 +8,7 @@
     <title>{{ $manifest['title'] }}{{ ! empty($preview) ? ' (Preview)' : '' }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="h-full bg-slate-100 font-sans text-slate-900">
+<body class="h-full bg-steel-100 font-sans text-steel-950">
 
 @php
     $capabilities = $capabilities ?? \App\Support\PlayerCapabilities::forPlay();
@@ -16,13 +16,13 @@
 @endphp
 
 <noscript>
-    <p class="m-4 rounded-md border-2 border-amber-700 bg-amber-50 p-4 font-semibold">
+    <p class="player-notice m-4 font-semibold">
         This lesson needs JavaScript turned on. Please enable JavaScript and reload the page.
     </p>
 </noscript>
 
 @if ($preview)
-    <div class="border-b-2 border-amber-800 bg-amber-100 px-4 py-3 text-sm font-semibold text-amber-950" role="status">
+    <div class="player-notice rounded-none border-x-0 border-t-0 px-4 py-3 text-sm font-semibold" role="status">
         {{ $previewBanner ?? 'Previewing your last saved draft. Grading, persistence, and completion-gate enforcement are not being tested.' }}
     </div>
 @endif
@@ -36,13 +36,13 @@
      x-cloak
      class="flex min-h-full flex-col">
 
-    <header class="border-b-2 border-slate-400 bg-white">
+    <header class="player-header">
         <div class="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <h1 class="truncate text-lg font-bold sm:text-xl">{{ $manifest['title'] }}</h1>
-                <p class="text-sm text-slate-700" x-text="`Page ${currentIndex + 1} of ${totalPages}`"></p>
-                <p class="text-sm text-slate-600" x-show="readOnly" x-cloak>{{ __('player.read_only') }}</p>
-                <p class="text-sm font-semibold text-slate-700"
+                <h1 class="player-heading truncate text-xl sm:text-2xl">{{ $manifest['title'] }}</h1>
+                <p class="player-meta player-header-meta text-sm" x-text="`Page ${currentIndex + 1} of ${totalPages}`"></p>
+                <p class="player-header-meta text-sm" x-show="readOnly" x-cloak>{{ __('player.read_only') }}</p>
+                <p class="player-header-meta text-sm font-semibold"
                    role="status"
                    aria-live="polite"
                    x-show="! readOnly"
@@ -86,7 +86,7 @@
                              @keydown.escape="settingsOpen = false; $refs.settingsToggle?.focus()"
                              role="group"
                              aria-labelledby="speech-settings-toggle"
-                             class="absolute top-full right-0 z-20 mt-2 w-72 space-y-4 rounded-lg border-2 border-slate-400 bg-white p-4 shadow-lg">
+                             class="absolute top-full right-0 z-20 mt-2 w-72 space-y-4 rounded-lg border-2 border-steel-400 bg-white p-4 text-steel-950 shadow-lg">
                             <div>
                                 <label class="player-field-label" for="speech-rate">
                                     Speed <span x-text="`${speech.rate.toFixed(1)}×`"></span>
@@ -104,7 +104,7 @@
                             <div>
                                 <label class="player-field-label" for="speech-voice">Voice</label>
                                 <select id="speech-voice"
-                                        class="mt-2 min-h-11 w-full rounded-md border-2 border-slate-500 bg-white px-2"
+                                        class="mt-2 min-h-11 w-full rounded-md border-2 border-steel-700 bg-white px-2"
                                         x-model="speech.voiceUri"
                                         @change="applyVoice()">
                                     <option value="">Default voice</option>
@@ -119,14 +119,14 @@
             </div>
         </div>
 
-        <div class="h-2 w-full bg-slate-300"
+        <div class="player-progress h-2 w-full"
              role="progressbar"
              aria-label="Lesson progress"
              aria-valuemin="1"
              :aria-valuenow="currentIndex + 1"
              :aria-valuemax="totalPages"
              :aria-valuetext="`Page ${currentIndex + 1} of ${totalPages}`">
-            <div class="h-full bg-blue-700" :style="`width: ${progressPercent}%`"></div>
+            <div class="player-progress-fill h-full" :style="`width: ${progressPercent}%`"></div>
         </div>
     </header>
 
@@ -138,7 +138,7 @@
                 <h2 id="page-heading-{{ $index }}"
                     data-page-heading
                     tabindex="-1"
-                    class="text-2xl font-bold sm:text-3xl">{{ $page['title'] }}</h2>
+                    class="player-heading text-3xl sm:text-4xl">{{ $page['title'] }}</h2>
 
                 <div class="mt-6 space-y-8">
                     @foreach ($page['blocks'] as $block)
@@ -154,12 +154,12 @@
     {{-- data-drag-scroll-inset-bottom: drag auto-scroll measures this at each
          dragstart so the edge zone sits above the sticky footer, including when
          gateMessage grows or shrinks the bar. --}}
-    <footer class="sticky bottom-0 border-t-2 border-slate-400 bg-white"
+    <footer class="player-footer sticky bottom-0"
             data-drag-scroll-inset-bottom>
         <nav aria-label="Lesson navigation" class="mx-auto w-full max-w-4xl px-4 py-3">
             {{-- Why Continue is not yet available: visible text, not colour. --}}
             <p id="continue-hint"
-               class="min-h-6 text-sm font-semibold text-amber-900"
+               class="min-h-6 text-sm font-semibold text-hazard-700"
                aria-live="polite"
                x-text="gateMessage"></p>
 
@@ -184,7 +184,7 @@
                 </template>
 
                 <template x-if="isLastPage">
-                    <p class="text-sm font-semibold text-slate-700">End of lesson.</p>
+                    <p class="text-sm font-semibold text-steel-700">End of lesson.</p>
                 </template>
             </div>
         </nav>

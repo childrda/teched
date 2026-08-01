@@ -43,10 +43,10 @@
                   @if (filled($config['placeholder'] ?? null)) placeholder="{{ $config['placeholder'] }}" @endif
                   aria-describedby="{{ $hintId }}"></textarea>
 
-        <p id="{{ $hintId }}" class="mt-2 min-h-6 text-sm text-slate-700" x-text="hint"></p>
+        <p id="{{ $hintId }}" class="player-meta mt-2 min-h-6 text-sm text-steel-700" x-text="hint"></p>
     </div>
 
-    <div class="rounded border-2 border-slate-400 bg-slate-50 p-3 text-sm" x-show="review" x-cloak>
+    <div class="rounded border-2 border-steel-400 bg-steel-100 p-3 text-sm" x-show="review" x-cloak>
         <template x-if="review && ! review.reviewed">
             <p x-text="strings.awaiting_review"></p>
         </template>

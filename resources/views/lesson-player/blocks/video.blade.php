@@ -5,7 +5,7 @@
 
 <div class="player-card space-y-4">
     @if (filled($config['title'] ?? null))
-        <h3 class="text-xl font-semibold" data-speech-id="title">{{ $config['title'] }}</h3>
+        <h3 class="player-heading text-2xl" data-speech-id="title">{{ $config['title'] }}</h3>
     @endif
 
     <div class="aspect-video w-full overflow-hidden rounded bg-black">

@@ -1,3 +1,8 @@
+/* Must precede every other rule: CSS only honours @import at the top of a
+   sheet. Each family degrades to the stack below it if the CDN is blocked. */
+@import url('https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap');
+@import url('https://fonts.bunny.net/css?family=bebas-neue:400&display=swap');
+@import url('https://fonts.bunny.net/css?family=ibm-plex-mono:400,500,600&display=swap');
 @import 'tailwindcss';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
@@ -5,9 +10,44 @@
 @source '../**/*.blade.php';
 @source '../**/*.js';
 
+/*
+ * "Steel & arc" — the same system the admin panel carries, applied to the
+ * student player. Inter is the working face because this is a reading-heavy
+ * surface for children; Bebas Neue is display only; IBM Plex Mono is for small
+ * data (page counts, attempt counts, character counts).
+ *
+ * 'Instrument Sans' was previously declared here but never loaded on any page
+ * except welcome.blade.php, so the player has in fact been rendering in
+ * system-ui. Switching to Inter therefore changes real glyph metrics — see the
+ * font pin on .placement-layout below, which is what keeps that change away
+ * from the two drag activities.
+ */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display: 'Bebas Neue', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-utility: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    --color-steel-950: #12161b;
+    --color-steel-800: #1d242c;
+    --color-steel-700: #3c4a59;
+    --color-steel-400: #94a0ad;
+    --color-steel-300: #bdc5ce;
+    --color-steel-200: #d9dfe5;
+    --color-steel-100: #edf1f4;
+
+    --color-arc: #ff5a1f;
+    --color-arc-700: #ab401c;
+    --color-arc-600: #c3451a;
+    --color-arc-50: #fff5f1;
+
+    --color-molten: #ffb13c;
+    --color-molten-700: #9b691a;
+    --color-molten-50: #fff4e1;
+
+    --color-hazard: #ffc400;
+    --color-hazard-700: #926f00;
+    --color-hazard-50: #fff7da;
 }
 
 /* The player is driven by Alpine; hide it until Alpine has taken over so
@@ -23,6 +63,17 @@
         outline: 3px solid #1d4ed8;
         outline-offset: 2px;
         border-radius: 2px;
+    }
+
+    /* The header is the one dark surface in the player, and the blue ring
+       above only reaches 2.84:1 against it — below the 3:1 minimum for a
+       non-text indicator, where everywhere else it sits at 6.0-6.8. Molten
+       restores it to 10.8:1 on that background. Colour only; the width, the
+       offset and when it appears are untouched. The read-aloud popover is
+       excluded because it is a white panel inside the dark header, where the
+       original blue is still the stronger of the two. */
+    .player-header :focus-visible:not(#speech-settings *) {
+        outline-color: #ffb13c;
     }
 
     /* Page headings take programmatic focus after navigation; they are not
@@ -42,22 +93,35 @@
         @apply inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md border-2 px-4 py-2 text-base font-semibold;
     }
 
+    /* .player-btn itself is left exactly as it was. Its geometry — the 44px
+       minimum target, the border width, the type size — is what matching's
+       reset button and every read-aloud toggle are sized by, so only the
+       colour variants below move. */
+
     .player-btn-primary {
-        @apply border-blue-800 bg-blue-700 text-white hover:bg-blue-800;
+        @apply border-arc-700 bg-arc-600 text-white hover:bg-arc-700;
     }
 
     /* aria-disabled rather than disabled: the control stays focusable so a
        screen reader user can reach it and hear why it is not yet usable. */
     .player-btn-primary[aria-disabled='true'] {
-        @apply cursor-not-allowed border-slate-500 bg-slate-200 text-slate-700 hover:bg-slate-200;
+        @apply cursor-not-allowed border-steel-400 bg-steel-200 text-steel-700 hover:bg-steel-200;
     }
 
     .player-btn-secondary {
-        @apply border-slate-600 bg-white text-slate-900 hover:bg-slate-100;
+        @apply border-steel-700 bg-white text-steel-950 hover:bg-steel-100;
     }
 
+    /* Left as it was: the placement status bar's reset button carries these
+       same three classes and lives inside a protected activity, so the base
+       rule stays put and the new treatment is added on a scoped selector
+       underneath. */
     .player-btn-quiet {
         @apply border-slate-500 bg-white text-slate-800 hover:bg-slate-100;
+    }
+
+    .player-btn-quiet:not(.placement-layout *) {
+        @apply border-steel-700 bg-white text-steel-950 hover:bg-steel-100;
     }
 
     .player-btn-sm {
@@ -66,6 +130,50 @@
 
     .player-card {
         @apply rounded-lg border-2 border-slate-400 bg-white p-4 sm:p-6;
+    }
+
+    /* The steel/paper card. Scoped off .placement-layout, which both protected
+       activities carry on the very same element as .player-card — so the
+       exclusion has to be a compound selector, not an ancestor one. Box
+       metrics are untouched; only the border colour moves, plus the rivet
+       marks and the arc rule drawn in the padding. */
+    .player-card:not(.placement-layout) {
+        @apply relative border-steel-400;
+    }
+
+    .player-card:not(.placement-layout)::before {
+        content: '';
+        position: absolute;
+        inset: 0.4rem;
+        pointer-events: none;
+        background-image:
+            radial-gradient(circle, var(--color-steel-400) 0 1.5px, transparent 2px),
+            radial-gradient(circle, var(--color-steel-400) 0 1.5px, transparent 2px),
+            radial-gradient(circle, var(--color-steel-400) 0 1.5px, transparent 2px),
+            radial-gradient(circle, var(--color-steel-400) 0 1.5px, transparent 2px);
+        background-size: 6px 6px;
+        background-repeat: no-repeat;
+        background-position:
+            0 0,
+            100% 0,
+            0 100%,
+            100% 100%;
+    }
+
+    /* Inset past the corner radius: a 2px bar cannot follow a 0.5rem curve. */
+    .player-card:not(.placement-layout)::after {
+        content: '';
+        position: absolute;
+        inset-inline: 0.5rem;
+        top: 0;
+        height: 2px;
+        pointer-events: none;
+        background-image: linear-gradient(
+            to right,
+            var(--color-arc),
+            var(--color-molten) 35%,
+            transparent 75%
+        );
     }
 
     /* Placement activities: matching rows and image hotspots.
@@ -79,6 +187,16 @@
        little air. Bank max-height feeds scroll-margin only in single-column
        layouts, where the bank overlays targets while stuck. */
     .placement-layout {
+        /* The font pin, not a style choice. Matching and image labeling are
+           tuned to precise sticky and drag geometry, and a new face changes
+           glyph widths and line boxes even with no spacing change. This is the
+           exact stack these activities render with today, restated so that
+           switching the page to Inter cannot reach them. Everything in both
+           activities is a descendant of this element, so one declaration
+           covers the bank, the rows, the slots and the hotspots. */
+        font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+            'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
         --placement-sticky-top: 0.75rem;
         /* Single-column / image labeling: tall enough for a useful bank. */
         --placement-bank-max-height: min(60vh, 32rem);
@@ -184,21 +302,107 @@
         @apply block text-sm font-semibold text-slate-900;
     }
 
+    /* Both protected activities use this class for their section headings, so
+       the colour and tracking below are scoped away from them. No font or size
+       change even outside them: these are form labels on a page children read,
+       not decoration. */
+    .player-field-label:not(.placement-layout *) {
+        @apply text-steel-950;
+        letter-spacing: 0.01em;
+    }
+
+    /* Display face. Bebas ships a single weight, so any inherited bold would
+       be synthesised — the weight is pinned to 400 wherever it is applied. */
+    .player-heading {
+        font-family: var(--font-display);
+        font-weight: 400;
+        letter-spacing: 0.015em;
+    }
+
+    /* Small data: page counts, attempt counts, character counts. */
+    .player-meta {
+        font-family: var(--font-utility);
+        letter-spacing: 0.02em;
+    }
+
+    /* Page shell. The header is the one dark surface in the player; its text
+       colours are set here rather than as utilities so the shared sign-out
+       component inherits them instead of fighting them. */
+    .player-header {
+        @apply bg-steel-950 text-white;
+        box-shadow: inset 0 -2px 0 0 var(--color-arc);
+    }
+
+    .player-header .player-field-label {
+        @apply text-steel-950;
+    }
+
+    .player-header-meta {
+        @apply text-steel-300;
+    }
+
+    .player-progress {
+        @apply bg-steel-800;
+    }
+
+    .player-progress-fill {
+        background-image: linear-gradient(to right, var(--color-arc), var(--color-molten));
+    }
+
+    .player-footer {
+        @apply border-t-2 border-steel-400 bg-white;
+    }
+
+    /* Genuine caution states only — the blocked quiz, the preview banner, the
+       no-JavaScript message. The stripe is what carries the meaning at a
+       glance; the text and icon already carry it for everyone else. */
+    .player-notice {
+        @apply rounded-md border-2 border-hazard-700 bg-hazard-50 p-4 text-steel-950;
+        border-inline-start-width: 8px;
+        border-inline-start-color: var(--color-hazard);
+    }
+
+    /* Response fields. Neither protected activity contains a textarea, so this
+       ancestor selector cannot reach one; the :focus-visible outline in the
+       base layer is untouched and still does the focus work. */
+    .lesson-block textarea {
+        @apply border-steel-700;
+    }
+
+    .lesson-block textarea:focus {
+        @apply border-arc-600;
+    }
+
     /* Author HTML arrives already sanitized; this only gives it rhythm. */
     .player-prose {
-        @apply text-base/7 text-slate-900;
+        @apply text-base/7 text-steel-950;
     }
 
+    /* Author headings take the display face. Neither protected activity uses
+       .player-prose, so this needs no scoping. */
     .player-prose :where(h1, h2, h3, h4) {
-        @apply mt-6 mb-2 font-semibold text-slate-900 first:mt-0;
+        @apply mt-6 mb-2 text-steel-950 first:mt-0;
+        font-family: var(--font-display);
+        font-weight: 400;
+        letter-spacing: 0.015em;
     }
 
+    /* Bebas is condensed, so the same rem value reads visibly smaller than the
+       body text around it; each level is stepped up to keep the hierarchy it
+       had. */
     .player-prose :where(h2) {
-        @apply text-xl;
+        font-size: 1.625rem;
+        line-height: 1.25;
     }
 
     .player-prose :where(h3) {
-        @apply text-lg;
+        font-size: 1.375rem;
+        line-height: 1.3;
+    }
+
+    .player-prose :where(h4) {
+        font-size: 1.1875rem;
+        line-height: 1.35;
     }
 
     .player-prose :where(p) {

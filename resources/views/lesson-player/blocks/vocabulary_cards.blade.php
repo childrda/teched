@@ -13,7 +13,7 @@
         @endphp
 
         <li class="player-card">
-            <h3 class="text-lg font-bold" data-speech-id="{{ $termId }}:term">{{ $term['term'] ?? '' }}</h3>
+            <h3 class="player-heading text-xl" data-speech-id="{{ $termId }}:term">{{ $term['term'] ?? '' }}</h3>
 
             <p class="mt-1 text-base/7" data-speech-id="{{ $termId }}:definition">{{ $term['definition'] ?? '' }}</p>
 

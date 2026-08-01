@@ -99,7 +99,7 @@
         </fieldset>
     @endforeach
 
-    <p class="text-sm text-slate-700" x-show="attemptsSummary" x-text="attemptsSummary"></p>
+    <p class="player-meta text-sm text-steel-700" x-show="attemptsSummary" x-text="attemptsSummary"></p>
 
     <div class="flex flex-wrap items-center gap-3">
         <button type="button"
@@ -116,15 +116,15 @@
                         class="player-btn player-btn-primary opacity-60"
                         disabled
                         aria-disabled="true">{{ __('quiz.submit') }}</button>
-                <p class="text-sm text-slate-700">Grading is unavailable in preview. Publish the lesson to test Submit.</p>
+                <p class="text-sm text-steel-700">Grading is unavailable in preview. Publish the lesson to test Submit.</p>
             </div>
         </template>
     </div>
 
     <template x-if="isBlocked">
-        <div class="rounded-md border-2 border-amber-800 bg-amber-50 p-4">
-            <p class="font-semibold text-amber-950" x-text="strings.no_attempts_remaining"></p>
-            <p class="mt-2 text-sm text-amber-950" x-text="strings.submit_unavailable"></p>
+        <div class="player-notice">
+            <p class="font-semibold" x-text="strings.no_attempts_remaining"></p>
+            <p class="mt-2 text-sm" x-text="strings.submit_unavailable"></p>
         </div>
     </template>
 
@@ -132,8 +132,8 @@
          below announces this text via announce(), so a second status here
          would make a screen reader hear the result twice. --}}
     <template x-if="latestResult">
-        <div class="rounded-md border-2 border-slate-500 bg-slate-50 p-4">
-            <h3 class="font-semibold" x-text="strings.result_heading"></h3>
+        <div class="rounded-md border-2 border-steel-700 bg-steel-100 p-4">
+            <h3 class="player-heading text-xl" x-text="strings.result_heading"></h3>
             <p class="mt-2 text-base" x-text="resultSummary"></p>
             <p class="mt-2 text-base font-semibold">
                 <span aria-hidden="true" x-text="latestResult.passed ? strings.passed_symbol : strings.failed_symbol"></span>
@@ -155,8 +155,8 @@
     </template>
 
     <template x-if="error && ! isBlocked">
-        <div class="rounded-md border-2 border-amber-800 bg-amber-50 p-4">
-            <p class="font-semibold text-amber-950" x-text="error"></p>
+        <div class="player-notice">
+            <p class="font-semibold" x-text="error"></p>
             <button type="button"
                     class="player-btn player-btn-secondary player-btn-sm mt-3"
                     @click="submit()"
